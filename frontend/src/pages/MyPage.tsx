@@ -52,6 +52,7 @@ const MyPage: React.FC = () => {
   const [selectedResult, setSelectedResult] =
     useState<SurveyResultDetail | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [activeTabKey, setActiveTabKey] = useState<string>('');
 
   // 퍼스널 컬러 테스트로 이동
   const handleGoToTest = () => {
@@ -62,12 +63,17 @@ const MyPage: React.FC = () => {
   const handleViewDetail = (result: SurveyResultDetail) => {
     setSelectedResult(result);
     setIsDetailModalOpen(true);
+    // 첫 번째 타입을 기본 활성 탭으로 설정
+    if (result.top_types && result.top_types.length > 0) {
+      setActiveTabKey(result.top_types[0].type);
+    }
   };
 
-  // 상세보기 모달 닫기
+  // 상세보기 모달 닫기 - 컴포넌트 초기화
   const handleCloseDetailModal = () => {
     setIsDetailModalOpen(false);
     setSelectedResult(null);
+    setActiveTabKey(''); // 활성 탭 초기화
   };
 
   // 진단 기록 삭제 확인
@@ -577,7 +583,8 @@ const MyPage: React.FC = () => {
                   </div>
 
                   <Tabs
-                    defaultActiveKey={selectedResult.top_types[0]?.type}
+                    activeKey={activeTabKey}
+                    onChange={setActiveTabKey}
                     items={selectedResult.top_types
                       .slice(0, 3)
                       .map((typeData, index) => {
