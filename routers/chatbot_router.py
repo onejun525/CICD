@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from openai import OpenAI
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 
 import models
 from routers.user_router import get_current_user
@@ -23,7 +24,6 @@ if not OPENAI_API_KEY:
 client = OpenAI(api_key=OPENAI_API_KEY)
 router = APIRouter(prefix="/api/chatbot", tags=["Chatbot"])
 
-# DB 세션 의존성 (에러 로깅 추가)
 def get_db():
     try:
         db = SessionLocal()
@@ -98,13 +98,28 @@ def analyze_personal_color(
     db: Session = Depends(get_db)
 ):
     try:
-        # 1. DB에서 사용자 최신 설문 결과 조회
+        # 0. 챗봇 히스토리 세션 생성
+        chat_history = models.ChatHistory(user_id=current_user.id)
+        db.add(chat_history)
+        db.commit()
+        db.refresh(chat_history)
+
+        # 1. 사용자 질문 ChatMessage 저장
+        user_msg_text = " / ".join(request.answers).strip()
+        user_msg = models.ChatMessage(
+            history_id=chat_history.id,
+            role="user",
+            text=user_msg_text
+        )
+        db.add(user_msg)
+        db.commit()
+        db.refresh(user_msg)
+
+        # 2. 설문 결과 컨텍스트 생성
         survey_result = db.query(models.SurveyResult)\
             .filter(models.SurveyResult.user_id == current_user.id)\
             .order_by(models.SurveyResult.created_at.desc())\
             .first()
-
-        # 2. 설문 결과 컨텍스트 생성 (최신 진단값 직접 포함)
         survey_context = ""
         if survey_result:
             survey_context = (
@@ -118,11 +133,9 @@ def analyze_personal_color(
                 for ans in survey_result.answers
             )
 
-        # 3. 사용자 입력 + 설문 병합
-        query_part = " / ".join(request.answers).strip()
+        # 3. 사용자 입력 + 설문 합치기
         combined_query = (
-            f"{query_part}\n\n[사용자 설문 결과]\n{survey_context}"
-            if survey_context else query_part
+            f"{user_msg_text}\n\n[사용자 설문 결과]\n{survey_context}" if survey_context else user_msg_text
         )
 
         if not combined_query.strip():
@@ -156,7 +169,6 @@ JSON 형식으로 only 결과를 반환:
 - description: 설명
 - recommendations: 추천 리스트
 """
-
         messages = [
             {"role": "system", "content": prompt_system},
             {"role": "user", "content": prompt_user}
@@ -180,15 +192,80 @@ JSON 형식으로 only 결과를 반환:
             )
         data = json.loads(content[start:end+1])
 
-        # 8. recommendations 리스트 보장
         recs = data.get("recommendations")
         if isinstance(recs, dict):
             data["recommendations"] = recs.get("colors") or list(recs.values())[0]
         if not isinstance(data["recommendations"], list):
             data["recommendations"] = []
 
+        # 8. AI 답변 메시지 ChatMessage 저장
+        ai_msg = models.ChatMessage(
+            history_id=chat_history.id,
+            role="ai",
+            text=json.dumps(data, ensure_ascii=False)
+        )
+        db.add(ai_msg)
+        db.commit()
+        db.refresh(ai_msg)
+
+        # 9. AI 피드백 채점 (임시 예시, 실제 production에서는 LLM 평가 등 연동)
+        def request_ai_feedback(question, answer):
+            # 실제 LLM 평가 연동 필요! 예시코드임
+            return {
+                "accuracy": 95,
+                "consistency": 90,
+                "reliability": 93,
+                "personalization": 88,
+                "practicality": 85,
+                "total_score": 90,
+                "vector_db_quality": 96,
+                "detail_accuracy": "RAG 데이터와 잘 일치.",
+                "detail_consistency": "논리적 연결성이 높음.",
+                "detail_reliability": "진단 근거 충분.",
+                "detail_personalization": "사용자 정보 반영.",
+                "detail_practicality": "실제 활용 가능."
+            }
+
+        feedback = request_ai_feedback(user_msg_text, content)
+        ai_feedback = models.AIFeedback(
+            message_id=ai_msg.id,
+            accuracy=feedback["accuracy"],
+            consistency=feedback["consistency"],
+            reliability=feedback["reliability"],
+            personalization=feedback["personalization"],
+            practicality=feedback["practicality"],
+            total_score=feedback["total_score"],
+            vector_db_quality=feedback["vector_db_quality"],
+            detail_accuracy=feedback["detail_accuracy"],
+            detail_consistency=feedback["detail_consistency"],
+            detail_reliability=feedback["detail_reliability"],
+            detail_personalization=feedback["detail_personalization"],
+            detail_practicality=feedback["detail_practicality"]
+        )
+        db.add(ai_feedback)
+        db.commit()
+
+        # 필요시 세션 종료 후 UserFeedback도 별도 엔드포인트로 저장 가능
+
         return ChatbotResponse(**data)
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"서버 내부 오류: {e}")
+
+# =========== 여기서부터 챗봇 세션 종료 ===========
+
+@router.post("/end/{history_id}")
+def end_chat_session(
+    history_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    chat = db.query(models.ChatHistory).filter_by(id=history_id, user_id=current_user.id).first()
+    if not chat:
+        raise HTTPException(status_code=404, detail="대화 세션 없음")
+    if chat.ended_at:
+        return {"message": "이미 종료됨", "ended_at": chat.ended_at}
+    chat.ended_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"message": "대화 종료", "ended_at": chat.ended_at}
