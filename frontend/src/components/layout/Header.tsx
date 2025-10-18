@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { useCurrentUser, useLogout } from '@/hooks/useUser';
 import RouterPaths from '@/routes/Router';
-import { getGenderAvatarConfig } from '@/utils/genderUtils';
+import { getAvatarRenderInfo } from '@/utils/genderUtils';
 
 const { Title } = Typography;
 
@@ -42,18 +42,15 @@ const Header: React.FC = () => {
 
   // 성별에 따른 아바타 렌더링
   const getGenderAvatar = () => {
-    const config = getGenderAvatarConfig(user?.gender, user?.id);
+    const avatarInfo = getAvatarRenderInfo(user?.gender, user?.id);
 
-    if (config.avatarType === 'emoji') {
-      return {
-        content: config.emoji,
-        className: config.className,
-        style: config.style
-      };
+    if (avatarInfo.content) {
+      // 이모티콘 방식
+      return avatarInfo;
     } else {
-      // 기존 아이콘 방식 (fallback)
+      // 아이콘 방식 (fallback)
       let icon;
-      switch (config.iconType) {
+      switch (avatarInfo.iconType) {
         case 'man':
           icon = <ManOutlined />;
           break;
@@ -66,8 +63,8 @@ const Header: React.FC = () => {
       }
       return {
         content: icon,
-        className: config.className,
-        style: config.style
+        className: avatarInfo.className,
+        style: avatarInfo.style
       };
     }
   };
@@ -115,7 +112,6 @@ const Header: React.FC = () => {
               <div className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors">
                 {(() => {
                   const avatarConfig = getGenderAvatar();
-                  const config = getGenderAvatarConfig(user?.gender, user?.id);
 
                   return (
                     <Avatar
@@ -123,11 +119,7 @@ const Header: React.FC = () => {
                       className={avatarConfig.className}
                       style={avatarConfig.style}
                     >
-                      {config.avatarType === 'emoji' ? (
-                        <span style={{ fontSize: '18px' }}>{config.emoji}</span>
-                      ) : (
-                        avatarConfig.content
-                      )}
+                      {avatarConfig.content}
                     </Avatar>
                   );
                 })()}

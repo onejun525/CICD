@@ -80,3 +80,28 @@ export const getGenderAvatarConfig = (gender?: GenderType, userId?: number): Gen
             };
     }
 };
+
+/**
+ * 성별에 따른 아바타 렌더링 정보를 반환하는 함수
+ * @param gender - 사용자 성별
+ * @param userId - 사용자 ID
+ * @returns 렌더링용 아바타 정보 (content, className, style)
+ */
+export const getAvatarRenderInfo = (gender?: GenderType, userId?: number) => {
+    const config = getGenderAvatarConfig(gender, userId);
+
+    if (config.avatarType === 'emoji') {
+        return {
+            content: config.emoji,
+            className: config.className,
+            style: config.style,
+        };
+    } else {
+        // 기존 아이콘 방식은 컴포넌트에서 처리 필요
+        return {
+            iconType: config.iconType,
+            className: config.className,
+            style: config.style,
+        };
+    }
+};
