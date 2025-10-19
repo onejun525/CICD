@@ -165,6 +165,13 @@ const PersonalColorTest: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // 챗봇 페이지로 이동
+  const handleGoToChatbot = () => {
+    // 챗봇 페이지 이동 전 캐시 무효화로 최신 데이터 보장
+    invalidateSurveyResults();
+    navigate(RouterPaths.Chatbot);
+  };
+
   // 마이페이지로 이동
   const handleGoToMyPage = () => {
     // 마이페이지 이동 전 캐시 무효화로 최신 데이터 보장
@@ -889,7 +896,7 @@ const PersonalColorTest: React.FC = () => {
                 <Button
                   size="large"
                   icon={<MessageOutlined />}
-                  onClick={() => navigate(RouterPaths.Chatbot)}
+                  onClick={handleGoToChatbot}
                   className="px-6 shadow-lg"
                   style={{
                     background:
