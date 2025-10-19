@@ -4,12 +4,28 @@ import apiClient from './client';
  * 챗봇 관련 API 타입 정의
  */
 
-export interface ChatMessage {
-  message: string;
+export interface ChatbotRequest {
+  question: string;
+  history_id?: number;
 }
 
-export interface ChatResponse {
-  response: string;
+export interface ChatResModel {
+  primary_tone: string;
+  sub_tone: string;
+  description: string;
+  recommendations: string[];
+}
+
+export interface ChatItemModel {
+  question_id: number;
+  question: string;
+  answer: string;
+  chat_res: ChatResModel;
+}
+
+export interface ChatbotHistoryResponse {
+  history_id: number;
+  items: ChatItemModel[];
 }
 
 /**
@@ -17,12 +33,12 @@ export interface ChatResponse {
  */
 class ChatbotApi {
   /**
-   * 챗봇에게 메시지 전송
+   * 챗봇에게 메시지 전송 및 분석
    */
-  async sendMessage(message: string): Promise<ChatResponse> {
-    const response = await apiClient.post<ChatResponse>(
-      '/chatbot/chat',
-      { message },
+  async analyze(request: ChatbotRequest): Promise<ChatbotHistoryResponse> {
+    const response = await apiClient.post<ChatbotHistoryResponse>(
+      '/chatbot/analyze',
+      request,
       {
         timeout: 30000, // 30초 타임아웃
         headers: {
@@ -34,13 +50,19 @@ class ChatbotApi {
   }
 
   /**
-   * 사용자의 퍼스널컬러 정보 기반 맞춤 질문
+   * 채팅 세션 종료
    */
-  async getPersonalizedQuestion(): Promise<ChatResponse> {
-    const response = await apiClient.get<ChatResponse>(
-      '/chatbot/personalized-question',
+  async endChatSession(
+    historyId: number
+  ): Promise<{ message: string; ended_at: string }> {
+    const response = await apiClient.post<{
+      message: string;
+      ended_at: string;
+    }>(
+      `/chatbot/end/${historyId}`,
+      {},
       {
-        timeout: 30000,
+        timeout: 10000,
       }
     );
     return response.data;

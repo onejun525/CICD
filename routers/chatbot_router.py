@@ -7,7 +7,7 @@ import models
 from routers.user_router import get_current_user
 from database import SessionLocal
 import os, json
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from math import sqrt
 
 from schemas import ChatbotRequest, ChatbotHistoryResponse, ChatItemModel, ChatResModel
@@ -15,7 +15,7 @@ from schemas import ChatbotRequest, ChatbotHistoryResponse, ChatItemModel, ChatR
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
-    raise RuntimeError("[translate:환경변수 OPENAI_API_KEY가 설정되지 않았습니다.]")
+    raise RuntimeError("환경변수 OPENAI_API_KEY가 설정되지 않았습니다.")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 router = APIRouter(prefix="/api/chatbot", tags=["Chatbot"])
@@ -29,7 +29,7 @@ def get_db():
 
 def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
     if overlap >= chunk_size:
-        raise ValueError("[translate:overlap은 chunk_size보다 작아야 합니다.]")
+        raise ValueError("overlap은 chunk_size보다 작아야 합니다.")
     chunks = []
     start = 0
     text_length = len(text)
@@ -82,9 +82,9 @@ def analyze(
     else:
         chat_history = db.query(models.ChatHistory).filter_by(id=request.history_id, user_id=current_user.id).first()
         if not chat_history:
-            raise HTTPException(status_code=404, detail="[translate:해당 history_id 세션 없음]")
+            raise HTTPException(status_code=404, detail="해당 history_id 세션 없음")
         if chat_history.ended_at:
-            raise HTTPException(status_code=400, detail="[translate:이미 종료된 세션입니다.]")
+            raise HTTPException(status_code=400, detail="이미 종료된 세션입니다.")
     prev_questions = db.query(models.ChatMessage).filter_by(history_id=chat_history.id, role="user").order_by(models.ChatMessage.id.asc()).all()
     question_id = len(prev_questions) + 1
     user_msg = models.ChatMessage(history_id=chat_history.id, role="user", text=request.question)
@@ -94,31 +94,49 @@ def analyze(
     survey_result = db.query(models.SurveyResult).filter(models.SurveyResult.user_id==current_user.id).order_by(models.SurveyResult.created_at.desc()).first()
     survey_context = ""
     if survey_result:
-        survey_context = f"[translate:최신 설문 결과]\n[translate:진단 tone]: {survey_result.result_tone}\n[translate:confidence]: {survey_result.confidence}\n[translate:total_score]: {survey_result.total_score}\n"
+        survey_context = f"최신 설문 결과\n진단 tone: {survey_result.result_tone}\nconfidence: {survey_result.confidence}\ntotal_score: {survey_result.total_score}\n"
         survey_context += "\n".join(f"{ans.question_id}: {ans.option_label}" for ans in survey_result.answers)
-    combined_query = f"{request.question}\n\n[translate:사용자 설문 결과]\n{survey_context}" if survey_context else request.question
+    combined_query = f"{request.question}\n\n사용자 설문 결과\n{survey_context}" if survey_context else request.question
     fixed_chunks = top_k_chunks(combined_query, fixed_index, client, k=3)
     trend_chunks = top_k_chunks(combined_query, trend_index, client, k=3)
     prompt_system = (
-        "[translate:당신은 퍼스널컬러 전문가이자 최신 패션 트렌드 컨설턴트입니다. 사용자의 최신 설문 진단 결과(result_tone, confidence, total_score 등)를 반드시 참고해서 퍼스널컬러 리포트와 추천을 작성해 주세요.]"
+        "당신은 퍼스널컬러 전문가이자 최신 패션 트렌드 컨설턴트입니다. 사용자의 최신 설문 진단 결과(result_tone, confidence, total_score 등)를 반드시 참고해서 퍼스널컬러 리포트와 추천을 작성해 주세요."
     )
-    prompt_user = f"""[translate:사용자 데이터]:\n{combined_query}\n\n[translate:불변 지식]\n{chr(10).join(fixed_chunks)}\n\n[translate:가변 지식]\n{chr(10).join(trend_chunks)}\n\n[translate:JSON 형식으로 only 결과를 반환]:
-- [translate:primary_tone]: '[translate:웜]' [translate:또는] '[translate:쿨]'
-- [translate:sub_tone]: '[translate:봄]'/'[translate:여름]'/'[translate:가을]'/'[translate:겨울]'
-- [translate:description]: [translate:설명]
-- [translate:recommendations]: [translate:추천 리스트]
+    prompt_user = f"""사용자 데이터:\n{combined_query}\n\n불변 지식\n{chr(10).join(fixed_chunks)}\n\n가변 지식\n{chr(10).join(trend_chunks)}\n\n다음 JSON 형식으로만 응답해주세요:
+{{
+  "primary_tone": "웜" 또는 "쿨",
+  "sub_tone": "봄" 또는 "여름" 또는 "가을" 또는 "겨울",
+  "description": "상세한 설명 텍스트",
+  "recommendations": ["추천사항1", "추천사항2", "추천사항3"]
+}}
+
+주의: recommendations는 반드시 문자열 배열이어야 합니다.
 """
     messages = [{"role": "system", "content": prompt_system}, {"role": "user", "content": prompt_user}]
     resp = client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0.3, max_tokens=600)
     content = resp.choices[0].message.content
     start, end = content.find("{"), content.rfind("}")
     if start == -1 or end == -1:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="[translate:JSON 결과 없음]")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JSON 결과 없음")
     data = json.loads(content[start:end+1])
-    if isinstance(data.get("recommendations"), dict):
-        data["recommendations"] = list(data["recommendations"].values())
-    if not isinstance(data["recommendations"], list):
-        data["recommendations"] = []
+    
+    # recommendations 필드 정리
+    recommendations = data.get("recommendations", [])
+    if isinstance(recommendations, dict):
+        recommendations = list(recommendations.values())
+    elif isinstance(recommendations, list):
+        # 중첩된 리스트를 평평하게 만들기
+        flattened_recommendations = []
+        for item in recommendations:
+            if isinstance(item, list):
+                flattened_recommendations.extend(item)
+            elif isinstance(item, str):
+                flattened_recommendations.append(item)
+        recommendations = flattened_recommendations
+    else:
+        recommendations = []
+    
+    data["recommendations"] = recommendations
     answer_string = data.get("description","")
     ai_msg = models.ChatMessage(history_id=chat_history.id, role="ai", text=json.dumps(data, ensure_ascii=False))
     db.add(ai_msg)
@@ -130,11 +148,30 @@ def analyze(
     for i in range(0,len(msgs)-1,2):
         if msgs[i].role=="user" and msgs[i+1].role=="ai":
             d = json.loads(msgs[i+1].text)
+            
+            # 기존 데이터의 recommendations 필드도 정리
+            recommendations = d.get("recommendations", [])
+            if isinstance(recommendations, dict):
+                recommendations = list(recommendations.values())
+            elif isinstance(recommendations, list):
+                # 중첩된 리스트를 평평하게 만들기
+                flattened_recommendations = []
+                for item in recommendations:
+                    if isinstance(item, list):
+                        flattened_recommendations.extend(item)
+                    elif isinstance(item, str):
+                        flattened_recommendations.append(item)
+                recommendations = flattened_recommendations
+            else:
+                recommendations = []
+            
+            d["recommendations"] = recommendations
+            
             items.append(ChatItemModel(
                 question_id=qid,
                 question=msgs[i].text,
                 answer=d.get("description",""),
-                chat_res=ChatResModel.parse_obj(d)
+                chat_res=ChatResModel.model_validate(d)
             ))
             qid += 1
     return {"history_id": chat_history.id, "items": items}
@@ -147,9 +184,9 @@ def end_chat_session(
 ):
     chat = db.query(models.ChatHistory).filter_by(id=history_id, user_id=current_user.id).first()
     if not chat:
-        raise HTTPException(status_code=404, detail="[translate:대화 세션 없음]")
+        raise HTTPException(status_code=404, detail="대화 세션 없음")
     if chat.ended_at:
-        return {"message": "[translate:이미 종료됨]", "ended_at": chat.ended_at}
+        return {"message": "이미 종료됨", "ended_at": chat.ended_at}
     chat.ended_at = datetime.now(timezone.utc)
     db.commit()
-    return {"message": "[translate:대화 종료]", "ended_at": chat.ended_at}
+    return {"message": "대화 종료", "ended_at": chat.ended_at}

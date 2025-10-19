@@ -25,17 +25,19 @@ import {
 import { useNavigate, useBeforeUnload, useBlocker } from 'react-router-dom';
 import { useCurrentUser } from '@/hooks/useUser';
 import { useSurveyResultsLive } from '@/hooks/useSurvey';
-import { chatbotApi } from '@/api/chatbot';
-import RouterPaths from '@/routes/Router';
+import { chatbotApi, type ChatResModel } from '@/api/chatbot';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 interface ChatMessage {
   id: string;
+  question?: string;
   content: string;
   isUser: boolean;
   timestamp: Date;
+  chatRes?: ChatResModel;
+  questionId?: number;
 }
 
 /**
@@ -53,6 +55,9 @@ const ChatbotPage: React.FC = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
   const [isLeavingPage, setIsLeavingPage] = useState(false);
+  const [currentHistoryId, setCurrentHistoryId] = useState<number | undefined>(
+    undefined
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 대화가 있는지 확인하는 함수
@@ -146,36 +151,82 @@ const ChatbotPage: React.FC = () => {
     setIsTyping(true);
 
     try {
-      const response = await chatbotApi.sendMessage(inputMessage.trim());
+      const response = await chatbotApi.analyze({
+        question: inputMessage.trim(),
+        history_id: currentHistoryId,
+      });
 
-      const botMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        content: response.response,
-        isUser: false,
-        timestamp: new Date(),
-      };
+      // 히스토리 ID 업데이트
+      setCurrentHistoryId(response.history_id);
 
-      setMessages(prev => [...prev, botMessage]);
+      // 최신 아이템 가져오기 (방금 전송한 질문의 응답)
+      const latestItem = response.items[response.items.length - 1];
+
+      if (latestItem) {
+        const botMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          content: latestItem.answer,
+          isUser: false,
+          timestamp: new Date(),
+          chatRes: latestItem.chat_res,
+          questionId: latestItem.question_id,
+        };
+
+        setMessages(prev => [...prev, botMessage]);
+      }
     } catch (error: any) {
       console.error('챗봇 메시지 전송 오류:', error);
 
+      let errorContent =
+        '죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+      let errorTitle = '메시지 전송 실패';
+
+      // 에러 타입별 메시지 분기
+      if (error.response) {
+        const status = error.response.status;
+        console.error('API 응답 에러:', status, error.response.data);
+
+        switch (status) {
+          case 400:
+            errorContent = '요청이 올바르지 않습니다. 다시 시도해주세요.';
+            break;
+          case 401:
+            errorContent = '로그인이 필요합니다. 다시 로그인해주세요.';
+            errorTitle = '인증 실패';
+            break;
+          case 404:
+            errorContent = '채팅 세션을 찾을 수 없습니다. 새로 시작해주세요.';
+            break;
+          case 500:
+            errorContent =
+              '서버에 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
+            break;
+          default:
+            errorContent = `서버 오류가 발생했습니다. (${status})`;
+        }
+      } else if (error.request) {
+        console.error('네트워크 에러:', error.request);
+        errorContent =
+          '서버에 연결할 수 없습니다. 네트워크 연결을 확인해주세요.';
+        errorTitle = '네트워크 오류';
+      }
+
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
-        content:
-          '죄송합니다. 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+        content: errorContent,
         isUser: false,
         timestamp: new Date(),
       };
 
       setMessages(prev => [...prev, errorMessage]);
-      message.error('메시지 전송에 실패했습니다.');
+      message.error(errorTitle);
     } finally {
       setIsTyping(false);
     }
   };
 
   // Enter 키 처리
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -194,14 +245,29 @@ const ChatbotPage: React.FC = () => {
       setIsFeedbackModalOpen(true);
     } else {
       setIsLeavingPage(true);
-      navigate(RouterPaths.Home);
+      navigate('/');
+    }
+  };
+
+  // 채팅 세션 종료 처리
+  const handleEndChatSession = async () => {
+    if (currentHistoryId) {
+      try {
+        await chatbotApi.endChatSession(currentHistoryId);
+        console.log('채팅 세션이 종료되었습니다.');
+      } catch (error) {
+        console.error('채팅 세션 종료 중 오류:', error);
+      }
     }
   };
 
   // 피드백 선택 처리
-  const handleFeedback = (isPositive: boolean) => {
+  const handleFeedback = async (isPositive: boolean) => {
     const feedbackType = isPositive ? '좋음' : '나쁨';
     console.log(`챗봇 사용 피드백: ${feedbackType}`);
+
+    // 채팅 세션 종료
+    await handleEndChatSession();
 
     setIsFeedbackModalOpen(false);
     setIsLeavingPage(true);
@@ -213,13 +279,16 @@ const ChatbotPage: React.FC = () => {
       blocker.proceed();
     } else {
       setTimeout(() => {
-        navigate(RouterPaths.Home);
+        navigate('/');
       }, 500);
     }
   };
 
   // 피드백 모달 닫기 (피드백 없이 나가기)
-  const handleCloseFeedbackModal = () => {
+  const handleCloseFeedbackModal = async () => {
+    // 채팅 세션 종료
+    await handleEndChatSession();
+
     setIsFeedbackModalOpen(false);
     setIsLeavingPage(true);
 
@@ -227,7 +296,7 @@ const ChatbotPage: React.FC = () => {
     if (blocker.state === 'blocked') {
       blocker.proceed();
     } else {
-      navigate(RouterPaths.Home);
+      navigate('/');
     }
   };
 
@@ -252,10 +321,7 @@ const ChatbotPage: React.FC = () => {
             <Title level={3}>로그인이 필요합니다</Title>
             <Text>챗봇을 사용하려면 로그인해주세요.</Text>
             <div className="mt-6">
-              <Button
-                type="primary"
-                onClick={() => navigate(RouterPaths.Login)}
-              >
+              <Button type="primary" onClick={() => navigate('/login')}>
                 로그인
               </Button>
             </div>
@@ -287,7 +353,7 @@ const ChatbotPage: React.FC = () => {
                 </Text>
               </div>
             </div>
-            <Button type="default" onClick={() => navigate(RouterPaths.MyPage)}>
+            <Button type="default" onClick={() => navigate('/mypage')}>
               진단 기록 보기
             </Button>
           </div>
@@ -328,7 +394,7 @@ const ChatbotPage: React.FC = () => {
                   <Button
                     type="primary"
                     size="large"
-                    onClick={() => navigate(RouterPaths.PersonalColorTest)}
+                    onClick={() => navigate('/personal-color-test')}
                     icon={<BulbOutlined />}
                   >
                     퍼스널컬러 진단하기
@@ -367,7 +433,7 @@ const ChatbotPage: React.FC = () => {
               </Text>
             </div>
           </div>
-          <Button type="default" onClick={() => navigate(RouterPaths.MyPage)}>
+          <Button type="default" onClick={() => navigate('/mypage')}>
             진단 기록 보기
           </Button>
         </div>
@@ -399,15 +465,17 @@ const ChatbotPage: React.FC = () => {
                 }`}
               >
                 <div
-                  className={`flex max-w-xs lg:max-w-md ${
+                  className={`flex max-w-xs lg:max-w-md items-start ${
                     msg.isUser ? 'flex-row-reverse' : 'flex-row'
                   }`}
                 >
                   <Avatar
                     icon={msg.isUser ? <UserOutlined /> : <RobotOutlined />}
-                    className={`${msg.isUser ? '!ml-2' : '!mr-2'} ${
-                      msg.isUser ? '!bg-blue-500' : '!bg-purple-500'
-                    }`}
+                    style={{
+                      backgroundColor: msg.isUser ? '#3b82f6' : '#8b5cf6',
+                      flexShrink: 0,
+                    }}
+                    className={msg.isUser ? '!ml-2' : '!mr-2'}
                   />
                   <div
                     className={`px-4 py-2 rounded-lg ${
@@ -423,6 +491,45 @@ const ChatbotPage: React.FC = () => {
                     >
                       {msg.content}
                     </Text>
+
+                    {/* AI 응답의 경우 추가 정보 표시 */}
+                    {!msg.isUser && msg.chatRes && (
+                      <div className="mt-3 pt-3 border-t border-gray-100">
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-purple-600">
+                              퍼스널 컬러:
+                            </span>
+                            <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded-full">
+                              {msg.chatRes.primary_tone} -{' '}
+                              {msg.chatRes.sub_tone}
+                            </span>
+                          </div>
+
+                          {msg.chatRes.recommendations &&
+                            msg.chatRes.recommendations.length > 0 && (
+                              <div>
+                                <div className="text-xs font-semibold text-gray-600 mb-1">
+                                  🎨 추천사항:
+                                </div>
+                                <div className="space-y-1">
+                                  {msg.chatRes.recommendations.map(
+                                    (rec, index) => (
+                                      <div
+                                        key={index}
+                                        className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded border-l-2 border-blue-300"
+                                      >
+                                        • {rec}
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="text-xs mt-1 opacity-70">
                       {msg.timestamp.toLocaleTimeString('ko-KR', {
                         hour: '2-digit',
@@ -437,10 +544,14 @@ const ChatbotPage: React.FC = () => {
             {/* 타이핑 인디케이터 */}
             {isTyping && (
               <div className="flex justify-start mb-4">
-                <div className="flex">
+                <div className="flex items-start">
                   <Avatar
                     icon={<RobotOutlined />}
-                    className="mr-2 !bg-purple-500"
+                    style={{
+                      backgroundColor: '#8b5cf6',
+                      flexShrink: 0,
+                    }}
+                    className="!mr-2"
                   />
                   <div className="bg-white border border-gray-200 px-4 py-2 rounded-lg">
                     <Spin size="small" />
@@ -458,62 +569,60 @@ const ChatbotPage: React.FC = () => {
           <Divider />
 
           {/* 샘플 질문 */}
-          {messages.length <= 1 && (
-            <div className="mb-4">
-              <Text strong className="!text-gray-700 block mb-2">
-                💡 이런 질문은 어떠세요?
-              </Text>
-              <Space wrap>
-                <Button
-                  size="small"
-                  onClick={() =>
-                    handleSampleQuestion(
-                      '내 퍼스널컬러에 어울리는 립스틱 색상을 추천해주세요'
-                    )
-                  }
-                >
-                  립스틱 색상 추천
-                </Button>
-                <Button
-                  size="small"
-                  onClick={() =>
-                    handleSampleQuestion(
-                      '봄 시즌에 어울리는 옷 색깔 조합을 알려주세요'
-                    )
-                  }
-                >
-                  계절별 코디
-                </Button>
-                <Button
-                  size="small"
-                  onClick={() =>
-                    handleSampleQuestion(
-                      '내 퍼스널컬러 타입의 특징과 장점을 설명해주세요'
-                    )
-                  }
-                >
-                  타입 특징 설명
-                </Button>
-                <Button
-                  size="small"
-                  onClick={() =>
-                    handleSampleQuestion(
-                      '피해야 할 색상이나 메이크업 팁이 있나요?'
-                    )
-                  }
-                >
-                  주의사항
-                </Button>
-              </Space>
-            </div>
-          )}
+          <div className="mb-4">
+            <Text strong className="!text-gray-700 block mb-2">
+              💡 이런 질문은 어떠세요?
+            </Text>
+            <Space wrap>
+              <Button
+                size="small"
+                onClick={() =>
+                  handleSampleQuestion(
+                    '내 퍼스널컬러에 어울리는 립스틱 색상을 추천해주세요'
+                  )
+                }
+              >
+                립스틱 색상 추천
+              </Button>
+              <Button
+                size="small"
+                onClick={() =>
+                  handleSampleQuestion(
+                    '지금 계절에 어울리는 옷 색깔 조합을 알려주세요'
+                  )
+                }
+              >
+                계절별 코디
+              </Button>
+              <Button
+                size="small"
+                onClick={() =>
+                  handleSampleQuestion(
+                    '내 퍼스널컬러 타입의 특징과 장점을 설명해주세요'
+                  )
+                }
+              >
+                타입 특징 설명
+              </Button>
+              <Button
+                size="small"
+                onClick={() =>
+                  handleSampleQuestion(
+                    '피해야 할 색상이나 메이크업 팁이 있나요?'
+                  )
+                }
+              >
+                주의사항
+              </Button>
+            </Space>
+          </div>
 
           {/* 입력 영역 */}
           <div className="flex gap-2">
             <TextArea
               value={inputMessage}
               onChange={e => setInputMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyDown}
               placeholder="퍼스널컬러에 대해 궁금한 것을 물어보세요..."
               autoSize={{ minRows: 1, maxRows: 3 }}
               disabled={isTyping}
