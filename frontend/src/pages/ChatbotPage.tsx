@@ -296,11 +296,11 @@ const ChatbotPage: React.FC = () => {
     } catch (error) {
       console.error('피드백 제출 중 오류:', error);
       message.error('피드백 제출 중 오류가 발생했습니다.');
-      
+
       // 오류가 발생해도 페이지는 나갈 수 있도록 처리
       setIsFeedbackModalOpen(false);
       setIsLeavingPage(true);
-      
+
       if (blocker.state === 'blocked') {
         blocker.proceed();
       } else {
@@ -361,7 +361,7 @@ const ChatbotPage: React.FC = () => {
   // 진단 내역이 없는 경우
   if (!surveyResults || surveyResults.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 pt-20 pb-8">
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 pt-8 pb-8">
         <div className="max-w-4xl mx-auto px-4">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center">
@@ -440,7 +440,7 @@ const ChatbotPage: React.FC = () => {
 
   // 챗봇 메인 화면
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 pt-20 pb-8">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 pt-8 pb-8">
       <div className="max-w-4xl mx-auto px-4">
         {/* 헤더 */}
         <div className="flex items-center justify-between mb-6">

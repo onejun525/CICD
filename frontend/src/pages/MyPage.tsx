@@ -201,7 +201,7 @@ const MyPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-20 pb-8 mt-4">
+    <div className="min-h-screen bg-gray-50 pt-8 pb-8 mt-1">
       <div className="max-w-6xl mx-auto px-4">
         <Title level={2} className="mb-8 !text-gray-800">
           마이페이지
