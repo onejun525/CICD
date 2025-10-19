@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Row,
   Col,
@@ -25,11 +25,16 @@ import {
   CalendarOutlined,
   TrophyOutlined,
   MoreOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { useCurrentUser, useDeleteCurrentUser } from '@/hooks/useUser';
-import { useSurveyResults, useDeleteSurvey } from '@/hooks/useSurvey';
-import { getGenderAvatarConfig } from '@/utils/genderUtils';
+import {
+  useCurrentUser,
+  useDeleteCurrentUser,
+  useUserStats,
+} from '@/hooks/useUser';
+import { useSurveyResultsLive, useDeleteSurvey } from '@/hooks/useSurvey';
+import { getAvatarRenderInfo } from '@/utils/genderUtils';
 import RouterPaths from '@/routes/Router';
 import type { SurveyResultDetail } from '@/api/survey';
 import type { PersonalColorType } from '@/types/personalColor';
@@ -41,11 +46,9 @@ const { Title, Text } = Typography;
  */
 const MyPage: React.FC = () => {
   const { data: user, isLoading } = useCurrentUser();
-  const {
-    data: surveyResults,
-    isLoading: isLoadingSurveys,
-    refetch: refetchSurveyResults,
-  } = useSurveyResults();
+  const { data: userStats, isLoading: isLoadingStats } = useUserStats();
+  const { data: surveyResults, isLoading: isLoadingSurveys } =
+    useSurveyResultsLive();
   const navigate = useNavigate();
   const deleteCurrentUser = useDeleteCurrentUser();
   const deleteSurvey = useDeleteSurvey();
@@ -54,32 +57,7 @@ const MyPage: React.FC = () => {
   const [selectedResult, setSelectedResult] =
     useState<SurveyResultDetail | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-
-  // 컴포넌트 마운트 시 및 페이지 포커스 시 설문 결과 새로고침
-  useEffect(() => {
-    // 페이지 진입 시 항상 최신 데이터 가져오기
-    refetchSurveyResults();
-
-    // 윈도우 포커스 시 데이터 새로고침 이벤트 핸들러
-    const handleFocus = () => {
-      refetchSurveyResults();
-    };
-
-    // 페이지 가시성 변경 시 데이터 새로고침
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        refetchSurveyResults();
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [refetchSurveyResults]);
+  const [activeTabKey, setActiveTabKey] = useState<string>('');
 
   // 퍼스널 컬러 테스트로 이동
   const handleGoToTest = () => {
@@ -90,12 +68,17 @@ const MyPage: React.FC = () => {
   const handleViewDetail = (result: SurveyResultDetail) => {
     setSelectedResult(result);
     setIsDetailModalOpen(true);
+    // 첫 번째 타입을 기본 활성 탭으로 설정
+    if (result.top_types && result.top_types.length > 0) {
+      setActiveTabKey(result.top_types[0].type);
+    }
   };
 
-  // 상세보기 모달 닫기
+  // 상세보기 모달 닫기 - 컴포넌트 초기화
   const handleCloseDetailModal = () => {
     setIsDetailModalOpen(false);
     setSelectedResult(null);
+    setActiveTabKey(''); // 활성 탭 초기화
   };
 
   // 진단 기록 삭제 확인
@@ -169,18 +152,15 @@ const MyPage: React.FC = () => {
 
   // 성별에 따른 아바타 렌더링
   const getGenderAvatar = () => {
-    const config = getGenderAvatarConfig(user?.gender, user?.id);
+    const avatarInfo = getAvatarRenderInfo(user?.gender, user?.id);
 
-    if (config.avatarType === 'emoji') {
-      return {
-        content: config.emoji,
-        className: config.className,
-        style: config.style,
-      };
+    if (avatarInfo.content) {
+      // 이모티콘 방식
+      return avatarInfo;
     } else {
-      // 기존 아이콘 방식 (fallback)
+      // 아이콘 방식 (fallback)
       let icon;
-      switch (config.iconType) {
+      switch (avatarInfo.iconType) {
         case 'man':
           icon = <ManOutlined />;
           break;
@@ -193,8 +173,8 @@ const MyPage: React.FC = () => {
       }
       return {
         content: icon,
-        className: config.className,
-        style: config.style,
+        className: avatarInfo.className,
+        style: avatarInfo.style,
       };
     }
   };
@@ -221,7 +201,7 @@ const MyPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pt-20 pb-8 mt-4">
+    <div className="min-h-screen bg-gray-50 pt-8 pb-8 mt-1">
       <div className="max-w-6xl mx-auto px-4">
         <Title level={2} className="mb-8 !text-gray-800">
           마이페이지
@@ -238,7 +218,6 @@ const MyPage: React.FC = () => {
               <div className="flex flex-col items-center justify-center py-2 border-b border-gray-100">
                 {(() => {
                   const avatarConfig = getGenderAvatar();
-                  const config = getGenderAvatarConfig(user?.gender, user?.id);
 
                   return (
                     <Avatar
@@ -246,36 +225,46 @@ const MyPage: React.FC = () => {
                       className={`${avatarConfig.className} mb-4`}
                       style={avatarConfig.style}
                     >
-                      {config.avatarType === 'emoji' ? (
-                        <span style={{ fontSize: '50px' }}>{config.emoji}</span>
+                      {typeof avatarConfig.content === 'string' ? (
+                        <span style={{ fontSize: '50px' }}>
+                          {avatarConfig.content}
+                        </span>
                       ) : (
                         avatarConfig.content
                       )}
                     </Avatar>
                   );
                 })()}
-                <Title level={3} className="mb-2 !text-gray-800 text-center">
-                  {user.nickname}
-                </Title>
-                <Text className="text-gray-500 text-lg text-center">
-                  {user.username}
-                </Text>
+                <div className="flex items-center gap-2">
+                  <Title level={3} className="!mb-2 !text-gray-800 text-center">
+                    @{user.nickname}
+                  </Title>
+                  <Text className="!text-gray-500 text-lg text-center">
+                    {user.username}
+                  </Text>
+                </div>
               </div>
 
-              {/* 진단 기록, 저장된 결과 데이터 */}
+              {/* 진단 기록, 저장된 결과, 채팅 세션 데이터 */}
               <div className="p-2">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-blue-600 mb-1">
-                      {surveyResults?.length || 0}
+                    <div className="text-xl font-bold text-blue-600 mb-1">
+                      {isLoadingStats ? '-' : userStats?.total_surveys || 0}
                     </div>
-                    <Text className="text-gray-600">진단 기록</Text>
+                    <Text className="!text-gray-600 text-sm">진단 기록</Text>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-green-600 mb-1">
-                      {surveyResults?.length || 0}
+                    <div className="text-xl font-bold text-green-600 mb-1">
+                      {isLoadingStats ? '-' : userStats?.saved_results || 0}
                     </div>
-                    <Text className="text-gray-600">저장된 결과</Text>
+                    <Text className="!text-gray-600 text-sm">저장된 결과</Text>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-purple-600 mb-1">
+                      {isLoadingStats ? '-' : userStats?.chat_sessions || 0}
+                    </div>
+                    <Text className="!text-gray-600 text-sm">AI 상담</Text>
                   </div>
                 </div>
               </div>
@@ -374,14 +363,28 @@ const MyPage: React.FC = () => {
                     <Text className="text-gray-500 text-base">
                       아직 진단 기록이 없습니다.
                     </Text>
-                    <div className="mt-4">
-                      <Button
-                        type="primary"
-                        size="large"
-                        onClick={handleGoToTest}
-                      >
-                        첫 진단 시작하기
-                      </Button>
+                    <Text className="text-gray-400 text-sm block mt-2">
+                      진단을 완료하면 AI 상담도 이용할 수 있습니다.
+                    </Text>
+                    <div className="mt-6 space-y-3">
+                      <div>
+                        <Button
+                          type="primary"
+                          size="large"
+                          onClick={handleGoToTest}
+                        >
+                          첫 진단 시작하기
+                        </Button>
+                      </div>
+                      <div>
+                        <Button
+                          disabled
+                          icon={<MessageOutlined />}
+                          className="text-gray-400"
+                        >
+                          AI 상담 받기 (진단 후 이용 가능)
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ) : (
@@ -475,10 +478,19 @@ const MyPage: React.FC = () => {
                       )}
                     />
 
-                    <div className="text-center pt-4 border-t border-gray-100">
-                      <Button type="primary" onClick={handleGoToTest}>
-                        새 진단 시작하기
-                      </Button>
+                    <div className="text-center pt-4 border-t border-gray-100 space-y-3">
+                      <div className="flex justify-center gap-3">
+                        <Button
+                          type="default"
+                          icon={<MessageOutlined />}
+                          onClick={() => navigate(RouterPaths.Chatbot)}
+                        >
+                          AI 상담 받기
+                        </Button>
+                        <Button type="primary" onClick={handleGoToTest}>
+                          새 진단 시작하기
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -582,7 +594,8 @@ const MyPage: React.FC = () => {
                   </div>
 
                   <Tabs
-                    defaultActiveKey={selectedResult.top_types[0]?.type}
+                    activeKey={activeTabKey}
+                    onChange={setActiveTabKey}
                     items={selectedResult.top_types
                       .slice(0, 3)
                       .map((typeData, index) => {
