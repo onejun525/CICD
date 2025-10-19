@@ -21,7 +21,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { useCurrentUser } from '@/hooks/useUser';
-import { useSurveyResults } from '@/hooks/useSurvey';
+import { useSurveyResultsLive } from '@/hooks/useSurvey';
 import { chatbotApi } from '@/api/chatbot';
 import RouterPaths from '@/routes/Router';
 
@@ -42,7 +42,8 @@ interface ChatMessage {
 const ChatbotPage: React.FC = () => {
   const navigate = useNavigate();
   const { data: user, isLoading: userLoading } = useCurrentUser();
-  const { data: surveyResults, isLoading: surveyLoading } = useSurveyResults();
+  const { data: surveyResults, isLoading: surveyLoading } =
+    useSurveyResultsLive();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -58,9 +59,9 @@ const ChatbotPage: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  // 초기 환영 메시지 설정
+  // 초기 환영 메시지 설정 및 업데이트
   useEffect(() => {
-    if (surveyResults && surveyResults.length > 0 && messages.length === 0) {
+    if (surveyResults && surveyResults.length > 0) {
       const latestResult = surveyResults[0];
       const welcomeMessage: ChatMessage = {
         id: 'welcome',
@@ -81,9 +82,18 @@ const ChatbotPage: React.FC = () => {
         isUser: false,
         timestamp: new Date(),
       };
-      setMessages([welcomeMessage]);
+
+      // 메시지가 없거나, 첫 번째 메시지가 환영 메시지인 경우 업데이트
+      setMessages(prevMessages => {
+        if (prevMessages.length === 0) {
+          return [welcomeMessage];
+        } else if (prevMessages[0]?.id === 'welcome') {
+          return [welcomeMessage, ...prevMessages.slice(1)];
+        }
+        return prevMessages;
+      });
     }
-  }, [surveyResults, messages.length]);
+  }, [surveyResults]);
 
   // 메시지 전송 처리
   const handleSendMessage = async () => {
