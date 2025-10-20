@@ -53,6 +53,15 @@ class User(BaseModel):
     class Config:
         from_attributes = True
 
+class UserRoleUpdateRequest(BaseModel):
+    role: Literal['user', 'admin']
+
+class UserRoleUpdateResponse(BaseModel):
+    success: bool
+    message: str
+    user_id: int
+    role: Literal['user', 'admin']
+
 class Token(BaseModel):
     access_token: str
     token_type: str

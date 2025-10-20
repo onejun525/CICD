@@ -5,6 +5,7 @@ from jose import jwt, JWTError
 from datetime import datetime, timedelta, timezone
 import os
 from dotenv import load_dotenv
+from schemas import UserRoleUpdateRequest, UserRoleUpdateResponse
 
 import models, schemas, hashing
 from database import SessionLocal
@@ -106,7 +107,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise credentials_exception
     return user
 
-# 관리자만 접근 가능한 전체 유저 리스트 API
 @router.get("/list", response_model=list[schemas.User])
 async def get_user_list(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if current_user.role != "admin":
@@ -177,6 +177,25 @@ async def get_user_stats(current_user: models.User = Depends(get_current_user), 
         )
 
 # ------------------ 관리자용 챗봇 히스토리 라우터 ------------------
+
+# 관리자만 접근 가능한 유저 role 수정 API
+@router.patch("/{user_id}/role", response_model=UserRoleUpdateResponse)
+async def update_user_role(
+    user_id: int,
+    req: UserRoleUpdateRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="관리자만 접근 가능합니다.")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+    if user.role == req.role:
+        return UserRoleUpdateResponse(success=False, message="이미 해당 권한입니다.", user_id=user_id, role=user.role)
+    user.role = req.role
+    db.commit()
+    return UserRoleUpdateResponse(success=True, message="권한이 성공적으로 변경되었습니다.", user_id=user_id, role=user.role)
 
 # 전체 유저 챗봇 히스토리 및 유저 피드백 리스트
 @router.get("/list/chat_history")
