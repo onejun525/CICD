@@ -48,6 +48,7 @@ class User(BaseModel):
     gender: Literal['남성', '여성'] | None = None
     create_date: datetime
     is_active: bool
+    role: Literal['user', 'admin'] = 'user'
 
     class Config:
         from_attributes = True

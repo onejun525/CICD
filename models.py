@@ -13,6 +13,7 @@ class User(Base):
     gender = Column(Enum("여성", "남성", name="gender_enum"), nullable=True)
     create_date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
+    role = Column(Enum("user", "admin", name="role_enum"), default="user", nullable=False)
 
 class SurveyResult(Base):
     __tablename__ = "survey_result"

@@ -1,5 +1,4 @@
 from database import Base, engine
-import models
 from models import Base
 
 print("Creating tables...")
