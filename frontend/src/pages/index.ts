@@ -4,3 +4,4 @@ export { default as LoginPage } from './auth/LoginPage';
 export { default as MyPage } from './MyPage';
 export { default as PersonalColorTestPage } from './PersonalColorTest';
 export { default as ChatbotPage } from './ChatbotPage';
+export { default as AdminDashboard } from './AdminDashboard';

@@ -8,6 +8,8 @@ import apiClient from './client';
 
 export type GenderType = '남성' | '여성';
 
+export type UserRole = 'user' | 'admin';
+
 export interface User {
     id: number;
     username: string;
@@ -16,6 +18,7 @@ export interface User {
     create_date: string;
     is_active: boolean;
     gender?: GenderType;
+    role: UserRole;
 }
 
 export interface CreateUserRequest {

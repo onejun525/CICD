@@ -8,8 +8,6 @@ from utils.shared import get_db, client
 
 router = APIRouter(prefix="/api/feedback", tags=["Feedback"])
 
-# ------------------ 관리자용 ai_feedback 리스트 라우터 (파일 하단) ------------------
-
 @router.get("/list/ai_feedbacks")
 def get_all_ai_feedbacks_admin(
     current_user: models.User = Depends(get_current_user),
@@ -52,17 +50,6 @@ def get_all_ai_feedbacks_admin(
             }
         })
     return {"ai_feedbacks": result}
-
-# ------------------ import 및 router 선언 (최상단) ------------------
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from routers.user_router import get_current_user
-import models
-import json
-from schemas import UserFeedbackRequest, UserFeedbackResponse
-from utils.shared import get_db, client
-
-router = APIRouter(prefix="/api/feedback", tags=["Feedback"])
 
 
 def parse_chat_pair_items(history):
