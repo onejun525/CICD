@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Tabs, Table, Spin, message, Card, Typography } from "antd";
+import { Tabs, Table, Spin, message, Card, Typography, Button, Drawer, List, Descriptions } from "antd";
 import type { TabsProps } from "antd";
 import { getAdminUserList, getAdminChatHistoryList, getAdminAIFeedbackList } from "../api/admin";
 
@@ -10,6 +10,8 @@ const AdminDashboard: React.FC = () => {
     const [users, setUsers] = useState<any[]>([]);
     const [chatHistories, setChatHistories] = useState<any[]>([]);
     const [aiFeedbacks, setAIFeedbacks] = useState<any[]>([]);
+    const [drawerOpen, setDrawerOpen] = useState(false);
+    const [drawerQAPairs, setDrawerQAPairs] = useState<any[]>([]);
 
     useEffect(() => {
         setLoading(true);
@@ -27,6 +29,27 @@ const AdminDashboard: React.FC = () => {
             .finally(() => setLoading(false));
     }, []);
 
+    // qa_paris 답변 구조 표 렌더 함수
+    const renderQaParisAnswerTable = (answerObj: any) => {
+        if (!answerObj) return null;
+        const { primary_tone, sub_tone, description, recommendations } = JSON.parse(answerObj);
+        if (!primary_tone || !sub_tone || !description || !recommendations) return null;
+        return (
+            <Descriptions bordered column={1} size="middle" style={{ marginBottom: 12 }}>
+                <Descriptions.Item label="추천 톤">{primary_tone}</Descriptions.Item>
+                <Descriptions.Item label="서브 톤">{sub_tone}</Descriptions.Item>
+                <Descriptions.Item label="설명">{description}</Descriptions.Item>
+                <Descriptions.Item label="추천">
+                    <ul style={{ margin: 0 }}>
+                        {Array.isArray(recommendations) && recommendations.map((rec: string, idx: number) => (
+                            <li key={idx}>- {rec}</li>
+                        ))}
+                    </ul>
+                </Descriptions.Item>
+            </Descriptions>
+        );
+    };
+
     const userColumns = [
         { title: "ID", dataIndex: "id", key: "id" },
         { title: "닉네임", dataIndex: "nickname", key: "nickname" },
@@ -42,6 +65,32 @@ const AdminDashboard: React.FC = () => {
         { title: "시작", dataIndex: "created_at", key: "created_at" },
         { title: "종료", dataIndex: "ended_at", key: "ended_at" },
         { title: "피드백", dataIndex: ["user_feedback", "feedback"], key: "feedback" },
+        {
+            title: "Q/A 요약",
+            key: "qa_summary",
+            render: (_: any, record: any) => {
+                const qa = record.qa_pairs?.[0];
+                if (!qa) return "-";
+                const truncate = (text: string, len: number) => text.length > len ? text.slice(0, len) + "..." : text;
+                return (
+                    <span>
+                        <b>Q:</b> {truncate(qa.question, 20)} <b>A:</b> {truncate(qa.answer, 20)}
+                    </span>
+                );
+            },
+        },
+        {
+            title: "상세보기",
+            key: "qa_detail",
+            render: (_: any, record: any) => (
+                <Button
+                    type="primary"
+                    size="small"
+                    disabled={!Array.isArray(record.qa_pairs) || record.qa_pairs.length === 0}
+                    onClick={() => { setDrawerQAPairs(record.qa_pairs); setDrawerOpen(true); }}
+                >상세보기</Button>
+            ),
+        },
     ];
 
     const aiFeedbackColumns = [
@@ -66,7 +115,49 @@ const AdminDashboard: React.FC = () => {
         {
             key: "chat",
             label: "챗봇 히스토리",
-            children: <Table rowKey="chat_history_id" columns={chatColumns} dataSource={chatHistories} pagination={false} />,
+            children: (
+                <>
+                    <Table
+                        rowKey="chat_history_id"
+                        columns={chatColumns}
+                        dataSource={chatHistories}
+                        pagination={false}
+                    />
+                    <Drawer
+                        title="질문/답변 상세내역"
+                        open={drawerOpen}
+                        onClose={() => setDrawerOpen(false)}
+                        width={500}
+                    >
+                        <List
+                            dataSource={drawerQAPairs}
+                            renderItem={(item, idx) => (
+                                <List.Item key={idx} style={{ padding: '0', borderBottom: 'none' }}>
+                                    <Card style={{ marginBottom: 16, borderRadius: 10, boxShadow: '0 2px 8px #eee' }}>
+                                        <Descriptions
+                                            title={`Q${idx + 1}. ${item.question}`}
+                                            column={1}
+                                            size="small"
+                                            bordered
+                                        >
+                                            <Descriptions.Item label="답변">
+                                                {typeof JSON.parse(item.answer) === 'object' && item.answer !== null ? (
+                                                    renderQaParisAnswerTable(item.answer)
+                                                ) : (
+                                                    <span style={{ color: '#1769aa', fontWeight: 600, whiteSpace: 'pre-line' }}>{item.answer}</span>
+                                                )}
+                                            </Descriptions.Item>
+                                        </Descriptions>
+                                        <div style={{ fontSize: 12, color: '#bbb', marginTop: 6, marginBottom: 2 }}>
+                                            질문ID: {item.question_id} / 답변ID: {item.answer_id}
+                                        </div>
+                                    </Card>
+                                </List.Item>
+                            )}
+                        />
+                    </Drawer>
+                </>
+            ),
         },
         {
             key: "ai_feedback",

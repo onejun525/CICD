@@ -195,12 +195,30 @@ async def get_all_users_chat_history(current_user: models.User = Depends(get_cur
                 "feedback": user_feedback.feedback,
                 "created_at": user_feedback.created_at
             }
+
+        # 질문/답변 내역 추출
+        messages = db.query(models.ChatMessage).filter(models.ChatMessage.history_id == history.id).order_by(models.ChatMessage.id.asc()).all()
+        qa_pairs = []
+        i = 0
+        while i < len(messages) - 1:
+            if messages[i].role == "user" and messages[i+1].role == "ai":
+                qa_pairs.append({
+                    "question": messages[i].text,
+                    "answer": messages[i+1].text,
+                    "question_id": messages[i].id,
+                    "answer_id": messages[i+1].id,
+                })
+                i += 2
+            else:
+                i += 1
+
         result.append({
             "chat_history_id": history.id,
             "user_id": history.user_id,
             "created_at": history.created_at,
             "ended_at": history.ended_at,
-            "user_feedback": feedback_data
+            "user_feedback": feedback_data,
+            "qa_pairs": qa_pairs
         })
     return result
 
