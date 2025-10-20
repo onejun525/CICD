@@ -1,11 +1,42 @@
 import React, { useEffect, useState } from "react";
-import { Tabs, Table, Spin, message, Card, Typography, Button, Drawer, List, Descriptions } from "antd";
+import { Tabs, Table, Spin, message, Card, Typography, Button, Drawer, List, Descriptions, Select } from "antd";
 import type { TabsProps } from "antd";
 import { getAdminUserList, getAdminChatHistoryList, getAdminAIFeedbackList } from "../api/admin";
 
 const { Title } = Typography;
 
 const AdminDashboard: React.FC = () => {
+    // 권한 변경 상태 관리
+    const [roleEditUserId, setRoleEditUserId] = useState<number | null>(null);
+    const [roleEditValue, setRoleEditValue] = useState<string>("");
+    const [roleEditLoading, setRoleEditLoading] = useState(false);
+
+    // 권한 변경 API 호출 함수
+    const handleRoleChange = async (userId: number, newRole: string) => {
+        setRoleEditLoading(true);
+        try {
+            const res = await fetch(`/api/users/${userId}/role`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ role: newRole }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                message.success(data.message || "권한 변경 완료");
+                // 변경된 유저 리스트 반영
+                setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, role: newRole } : u));
+            } else {
+                message.error(data.message || "권한 변경 실패");
+            }
+        } catch (err) {
+            message.error("권한 변경 중 오류 발생");
+        } finally {
+            setRoleEditUserId(null);
+            setRoleEditLoading(false);
+        }
+    };
     const [loading, setLoading] = useState(false);
     const [users, setUsers] = useState<any[]>([]);
     const [chatHistories, setChatHistories] = useState<any[]>([]);
@@ -56,9 +87,57 @@ const AdminDashboard: React.FC = () => {
         { title: "이메일", dataIndex: "email", key: "email" },
         { title: "성별", dataIndex: "gender", key: "gender" },
         { title: "가입일", dataIndex: "create_date", key: "create_date" },
-        { title: "권한", dataIndex: "role", key: "role" },
+        {
+            title: "권한",
+            dataIndex: "role",
+            key: "role",
+            render: (role: string) => <b>{role}</b>,
+        },
+        {
+            title: "권한변경",
+            key: "role_edit",
+            width: 250,
+            render: (_: any, record: any) => {
+                const isEditing = roleEditUserId === record.id;
+                return (
+                    <>
+                        {isEditing ? (
+                            <span>
+                                <Select
+                                    value={roleEditValue || record.role}
+                                    style={{ marginRight: 8 }}
+                                    onChange={v => setRoleEditValue(v)}
+                                    options={[{ value: "user", label: "user" }, { value: "admin", label: "admin" }]}
+                                    disabled={roleEditLoading}
+                                />
+                                <Button
+                                    type="primary"
+                                    size="small"
+                                    loading={roleEditLoading}
+                                    onClick={() => handleRoleChange(record.id, roleEditValue || record.role)}
+                                    disabled={roleEditValue === record.role}
+                                >저장</Button>
+                                <Button
+                                    size="small"
+                                    style={{ marginLeft: 4 }}
+                                    onClick={() => { setRoleEditUserId(null); setRoleEditValue(""); }}
+                                    disabled={roleEditLoading}
+                                >취소</Button>
+                            </span>
+                        ) : (
+                            <Button
+                                type="link"
+                                size="small"
+                                style={{ padding: 0, height: 22 }}
+                                onClick={() => { setRoleEditUserId(record.id); setRoleEditValue(record.role); }}
+                            >권한변경</Button>
+                        )}
+                    </>
+                );
+            },
+        },
     ];
-
+    // ...existing code...
     const chatColumns = [
         { title: "히스토리ID", dataIndex: "chat_history_id", key: "chat_history_id" },
         { title: "유저ID", dataIndex: "user_id", key: "user_id" },
