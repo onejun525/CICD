@@ -48,9 +48,19 @@ class User(BaseModel):
     gender: Literal['남성', '여성'] | None = None
     create_date: datetime
     is_active: bool
+    role: Literal['user', 'admin'] = 'user'
 
     class Config:
         from_attributes = True
+
+class UserRoleUpdateRequest(BaseModel):
+    role: Literal['user', 'admin']
+
+class UserRoleUpdateResponse(BaseModel):
+    success: bool
+    message: str
+    user_id: int
+    role: Literal['user', 'admin']
 
 class Token(BaseModel):
     access_token: str

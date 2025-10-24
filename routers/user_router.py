@@ -5,6 +5,7 @@ from jose import jwt, JWTError
 from datetime import datetime, timedelta, timezone
 import os
 from dotenv import load_dotenv
+from schemas import UserRoleUpdateRequest, UserRoleUpdateResponse
 
 import models, schemas, hashing
 from database import SessionLocal
@@ -50,7 +51,8 @@ def user_signup(user_create: schemas.UserCreate, db: Session = Depends(get_db)):
         password=hashed_password,
         email=user_create.email,
         gender=user_create.gender,
-        create_date=datetime.now()
+        create_date=datetime.now(),
+        role="user"  # 기본값
     )
     db.add(new_user)
     db.commit()
@@ -104,6 +106,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     if user is None:
         raise credentials_exception
     return user
+
+@router.get("/list", response_model=list[schemas.User])
+async def get_user_list(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="관리자만 접근 가능합니다.")
+    users = db.query(models.User).all()
+    return users
 
 @router.delete("/me", status_code=200)
 async def delete_user_account(
@@ -166,3 +175,92 @@ async def get_user_stats(current_user: models.User = Depends(get_current_user), 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="통계 정보 조회 중 오류가 발생했습니다."
         )
+
+# ------------------ 관리자용 챗봇 히스토리 라우터 ------------------
+
+# 관리자만 접근 가능한 유저 role 수정 API
+@router.patch("/{user_id}/role", response_model=UserRoleUpdateResponse)
+async def update_user_role(
+    user_id: int,
+    req: UserRoleUpdateRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="관리자만 접근 가능합니다.")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+    if user.role == req.role:
+        return UserRoleUpdateResponse(success=False, message="이미 해당 권한입니다.", user_id=user_id, role=user.role)
+    user.role = req.role
+    db.commit()
+    return UserRoleUpdateResponse(success=True, message="권한이 성공적으로 변경되었습니다.", user_id=user_id, role=user.role)
+
+# 전체 유저 챗봇 히스토리 및 유저 피드백 리스트
+@router.get("/list/chat_history")
+async def get_all_users_chat_history(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="관리자만 접근 가능합니다.")
+    chat_histories = db.query(models.ChatHistory).all()
+    result = []
+    for history in chat_histories:
+        user_feedback = db.query(models.UserFeedback).filter(models.UserFeedback.history_id == history.id).first()
+        feedback_data = None
+        if user_feedback:
+            feedback_data = {
+                "id": user_feedback.id,
+                "user_id": user_feedback.user_id,
+                "feedback": user_feedback.feedback,
+                "created_at": user_feedback.created_at
+            }
+
+        # 질문/답변 내역 추출
+        messages = db.query(models.ChatMessage).filter(models.ChatMessage.history_id == history.id).order_by(models.ChatMessage.id.asc()).all()
+        qa_pairs = []
+        i = 0
+        while i < len(messages) - 1:
+            if messages[i].role == "user" and messages[i+1].role == "ai":
+                qa_pairs.append({
+                    "question": messages[i].text,
+                    "answer": messages[i+1].text,
+                    "question_id": messages[i].id,
+                    "answer_id": messages[i+1].id,
+                })
+                i += 2
+            else:
+                i += 1
+
+        result.append({
+            "chat_history_id": history.id,
+            "user_id": history.user_id,
+            "created_at": history.created_at,
+            "ended_at": history.ended_at,
+            "user_feedback": feedback_data,
+            "qa_pairs": qa_pairs
+        })
+    return result
+
+# 특정 유저 챗봇/분석 히스토리 리스트
+@router.get("/{user_id}/chat_history")
+async def get_user_chat_history(user_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="관리자만 접근 가능합니다.")
+    chat_histories = db.query(models.ChatHistory).filter(models.ChatHistory.user_id == user_id).all()
+    result = []
+    for history in chat_histories:
+        messages = db.query(models.ChatMessage).filter(models.ChatMessage.history_id == history.id).all()
+        result.append({
+            "chat_history_id": history.id,
+            "created_at": history.created_at,
+            "ended_at": history.ended_at,
+            "messages": [
+                {
+                    "id": msg.id,
+                    "role": msg.role,
+                    "text": msg.text,
+                    "created_at": msg.created_at
+                } for msg in messages
+            ]
+        })
+    return result

@@ -33,6 +33,10 @@ const Header: React.FC = () => {
   const handleMyPage = () => {
     navigate(RouterPaths.MyPage);
   };
+  // 대시보드 버튼 클릭 핸들러
+  const handleDashboard = () => {
+    navigate(RouterPaths.AdminDashboard);
+  };
 
   // 로그아웃 버튼 클릭 핸들러
   const handleLogout = () => {
@@ -70,23 +74,43 @@ const Header: React.FC = () => {
   };
 
   // 로그인된 사용자의 드롭다운 메뉴
-  const userMenuItems: MenuProps['items'] = [
-    {
-      key: 'profile',
-      icon: <UserOutlined />,
-      label: '마이페이지',
-      onClick: handleMyPage,
-    },
-    {
-      type: 'divider',
-    },
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: '로그아웃',
-      onClick: handleLogout,
-    },
-  ];
+  const userMenuItems: MenuProps['items'] = user?.role === 'admin'
+    ? [
+      {
+        key: 'mypage',
+        icon: <UserOutlined />,
+        label: '마이페이지',
+        onClick: handleMyPage,
+      },
+      {
+        key: 'dashboard',
+        icon: <UserOutlined />,
+        label: '대시보드',
+        onClick: handleDashboard,
+      },
+      { type: 'divider' },
+      {
+        key: 'logout',
+        icon: <LogoutOutlined />,
+        label: '로그아웃',
+        onClick: handleLogout,
+      },
+    ]
+    : [
+      {
+        key: 'mypage',
+        icon: <UserOutlined />,
+        label: '마이페이지',
+        onClick: handleMyPage,
+      },
+      { type: 'divider' },
+      {
+        key: 'logout',
+        icon: <LogoutOutlined />,
+        label: '로그아웃',
+        onClick: handleLogout,
+      },
+    ];
 
   // 로딩 중일 때는 기본 헤더만 표시
   const isLoggedIn = !!user && !isLoading;

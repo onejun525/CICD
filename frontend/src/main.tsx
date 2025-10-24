@@ -14,6 +14,7 @@ import {
   MyPage,
   PersonalColorTestPage,
   ChatbotPage,
+  AdminDashboard,
 } from './pages';
 
 const router = createBrowserRouter([
@@ -44,6 +45,10 @@ const router = createBrowserRouter([
       {
         path: 'chatbot',
         element: <ChatbotPage />,
+      },
+      {
+        path: 'admin-dashboard',
+        element: <AdminDashboard />,
       },
     ],
   },
