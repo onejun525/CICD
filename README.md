@@ -1,6 +1,6 @@
 # 🎨 퍼스널컬러 진단 서비스
 
-SKN 16기 4차 단위프로젝트 - AI 기반 퍼스널컬러 진단 웹 애플리케이션
+SKN 16기 Final 단위프로젝트 - AI 기반 퍼스널컬러 진단 웹 애플리케이션
 
 ## 🚀 빠른 시작
 
@@ -14,8 +14,8 @@ SKN 16기 4차 단위프로젝트 - AI 기반 퍼스널컬러 진단 웹 애플�
 
 ```bash
 # 프로젝트 클론
-git clone https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN16-4th-3Team
-cd SKN16-4th-3Team
+git clone https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN16-FINAL-4Team.git
+cd SKN16-FINAL-4Team
 
 # 백엔드 의존성 설치
 pip install -r requirements.txt
@@ -138,7 +138,7 @@ kill -9 <PID>
 ## 📁 프로젝트 구조
 
 ```
-SKN16-4th-3Team/
+SKN16-FINAL-4Team/
 ├── main.py              # FastAPI 메인 애플리케이션
 ├── run.py               # 서버 실행 스크립트
 ├── database.py          # 데이터베이스 설정
