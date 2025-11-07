@@ -7,21 +7,38 @@ import models
 from routers.user_router import get_current_user
 from database import SessionLocal
 import os, json
-from typing import List, Dict, Any
-from math import sqrt
 
 
 from schemas import ChatbotRequest, ChatbotHistoryResponse, ChatItemModel, ChatResModel
 # AI 피드백 자동 평가 함수 임포트
 from routers.feedback_router import generate_ai_feedbacks
+# 유틸리티 함수들 임포트
+from utils.shared import (
+    top_k_chunks, 
+    build_rag_index, 
+    analyze_conversation_for_color_tone
+)
 
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("환경변수 OPENAI_API_KEY가 설정되지 않았습니다.")
 
+# 감정 분석 Fine-tuned 모델 설정
+EMOTION_MODEL_ID = os.getenv("EMOTION_MODEL_ID")
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "gpt-4.1-nano-2025-04-14")
+
 client = OpenAI(api_key=OPENAI_API_KEY)
 router = APIRouter(prefix="/api/chatbot", tags=["Chatbot"])
+
+# 모델 상태 출력
+print(f"🚀 Chatbot Router 초기화")
+print(f"   - 기본 모델: {DEFAULT_MODEL}")
+if EMOTION_MODEL_ID:
+    print(f"   - Fine-tuned 감정 모델: {EMOTION_MODEL_ID[:30]}***")
+    print(f"   ✅ Fine-tuned 모델 사용 가능")
+else:
+    print(f"   ⚠️ Fine-tuned 모델 미설정, 기본 모델 사용")
 
 def get_db():
     db = SessionLocal()
@@ -30,44 +47,123 @@ def get_db():
     finally:
         db.close()
 
-def chunk_text(text: str, chunk_size: int = 800, overlap: int = 100) -> List[str]:
-    if overlap >= chunk_size:
-        raise ValueError("overlap은 chunk_size보다 작아야 합니다.")
-    chunks = []
-    start = 0
-    text_length = len(text)
-    while start < text_length:
-        end = min(start + chunk_size, text_length)
-        chunks.append(text[start:end])
-        if end == text_length:
-            break
-        start += (chunk_size - overlap)
-    return [c.strip() for c in chunks if c.strip()]
-
-def cosine_similarity(a: List[float], b: List[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    na = sqrt(sum(x * x for x in a)) or 1e-8
-    nb = sqrt(sum(x * x for x in b)) or 1e-8
-    return dot / (na * nb)
-
-def embed_texts(client: OpenAI, texts: List[str], model: str = "text-embedding-3-small") -> List[List[float]]:
-    res = client.embeddings.create(model=model, input=texts)
-    return [item.embedding for item in res.data]
-
-def top_k_chunks(query: str, index: Dict[str, Any], client: OpenAI, k: int = 3) -> List[str]:
-    q_emb = embed_texts(client, [query])[0]
-    sims = [(cosine_similarity(q_emb, emb), i) for i, emb in enumerate(index["embeddings"])]
-    sims.sort(reverse=True, key=lambda x: x[0])
-    return [index["chunks"][i] for _, i in sims[:k]]
-
-def build_rag_index(client: OpenAI, filepath: str) -> Dict[str, Any]:
-    with open(filepath, encoding="utf-8") as f:
-        text = f.read()
-    chunks = chunk_text(text, chunk_size=800, overlap=100)
-    embeddings = embed_texts(client, chunks)
-    return {"chunks": chunks, "embeddings": embeddings}
-
+# RAG 인덱스 구축 (서버 시작 시 한 번만 실행)
 fixed_index = build_rag_index(client, "data/RAG/personal_color_RAG.txt")
+
+async def save_chatbot_analysis_result(
+    user_id: int, 
+    chat_history_id: int,
+    db: Session
+):
+    """
+    챗봇 대화 분석을 통해 퍼스널 컬러 진단 결과를 SurveyResult에 저장
+    """
+    try:
+        # 대화 히스토리에서 메시지들 가져오기
+        messages = db.query(models.ChatMessage).filter_by(
+            history_id=chat_history_id
+        ).order_by(models.ChatMessage.created_at.asc()).all()
+        
+        if not messages:
+            return None
+            
+        # 대화 내용을 분석하여 퍼스널 컬러 결정
+        conversation_text = ""
+        for msg in messages:
+            if msg.role == "user":
+                conversation_text += f"User: {msg.text}\n"
+            elif msg.role == "ai":
+                try:
+                    ai_data = json.loads(msg.text)
+                    conversation_text += f"AI: {ai_data.get('description', msg.text)}\n"
+                except:
+                    conversation_text += f"AI: {msg.text}\n"
+        
+        # 대화 분석을 통한 퍼스널 컬러 진단
+        color_analysis = analyze_conversation_for_color_tone(
+            client, conversation_text, fixed_index
+        )
+        
+        if not color_analysis:
+            return None
+            
+        # AI가 분석한 최종 결과에서 정보 추출
+        primary_type = color_analysis.get("primary_type", "spring")
+        confidence = color_analysis.get("confidence", 0.8)
+        
+        # 퍼스널 컬러 타입별 기본 정보
+        color_type_info = {
+            "spring": {
+                "name": "봄 웜톤 🌸",
+                "description": "생기 넘치고 화사한 당신! 밝고 따뜻한 색상이 잘 어울립니다.",
+                "color_palette": ["#FFB6C1", "#FFA07A", "#FFFF99", "#98FB98", "#87CEEB"],
+                "style_keywords": ["밝은", "화사한", "생기있는", "따뜻한", "생동감"],
+                "makeup_tips": ["코랄 계열 립", "피치 계열 블러셔", "브라운 계열 아이섀도우"]
+            },
+            "summer": {
+                "name": "여름 쿨톤 💎",
+                "description": "시원하고 우아한 당신! 부드럽고 차가운 색상이 잘 어울립니다.",
+                "color_palette": ["#E6E6FA", "#B0C4DE", "#FFC0CB", "#DDA0DD", "#F0F8FF"],
+                "style_keywords": ["우아한", "시원한", "부드러운", "세련된", "차분한"],
+                "makeup_tips": ["로즈 계열 립", "핑크 계열 블러셔", "쿨톤 아이섀도우"]
+            },
+            "autumn": {
+                "name": "가을 웜톤 🍂",
+                "description": "깊이 있고 세련된 당신! 진하고 따뜻한 색상이 잘 어울립니다.",
+                "color_palette": ["#D2691E", "#CD853F", "#DEB887", "#BC8F8F", "#F4A460"],
+                "style_keywords": ["깊이있는", "세련된", "따뜻한", "고급스러운", "안정적"],
+                "makeup_tips": ["벽돌색 계열 립", "브론즈 계열 블러셔", "브라운 계열 아이섀도우"]
+            },
+            "winter": {
+                "name": "겨울 쿨톤 ❄️",
+                "description": "명확하고 강렬한 당신! 선명하고 차가운 색상이 잘 어울립니다.",
+                "color_palette": ["#FF1493", "#4169E1", "#000000", "#FFFFFF", "#8A2BE2"],
+                "style_keywords": ["명확한", "강렬한", "선명한", "모던한", "시크한"],
+                "makeup_tips": ["레드 계열 립", "쿨톤 블러셔", "진한 아이메이크업"]
+            }
+        }
+        
+        type_info = color_type_info.get(primary_type, color_type_info["spring"])
+        
+        # Top types 생성 (신뢰도 기반으로 다른 타입들도 포함)
+        top_types = [
+            {
+                "type": primary_type,
+                "name": type_info["name"],
+                "description": type_info["description"],
+                "color_palette": type_info["color_palette"],
+                "style_keywords": type_info["style_keywords"],
+                "makeup_tips": type_info["makeup_tips"],
+                "score": int(confidence * 100)
+            }
+        ]
+        
+        # SurveyResult로 저장
+        survey_result = models.SurveyResult(
+            user_id=user_id,
+            result_tone=primary_type,
+            confidence=confidence,
+            total_score=int(confidence * 100),
+            source_type="chatbot",  # 챗봇 분석 출처 표시
+            detailed_analysis=color_analysis.get("analysis", "AI 챗봇을 통한 대화형 퍼스널 컬러 분석 결과입니다."),
+            result_name=type_info["name"],
+            result_description=type_info["description"],
+            color_palette=json.dumps(type_info["color_palette"], ensure_ascii=False),
+            style_keywords=json.dumps(type_info["style_keywords"], ensure_ascii=False),
+            makeup_tips=json.dumps(type_info["makeup_tips"], ensure_ascii=False),
+            top_types=json.dumps(top_types, ensure_ascii=False)
+        )
+        
+        db.add(survey_result)
+        db.commit()
+        db.refresh(survey_result)
+        
+        return survey_result
+        
+    except Exception as e:
+        print(f"❌ 챗봇 분석 결과 저장 중 오류: {e}")
+        db.rollback()
+        return None
 trend_index = build_rag_index(client, "data/RAG/beauty_trend_2025_autumn_RAG.txt")
 
 @router.post("/analyze", response_model=ChatbotHistoryResponse)
@@ -94,34 +190,116 @@ def analyze(
     db.add(user_msg)
     db.commit()
     db.refresh(user_msg)
-    survey_result = db.query(models.SurveyResult).filter(models.SurveyResult.user_id==current_user.id).order_by(models.SurveyResult.created_at.desc()).first()
-    survey_context = ""
-    if survey_result:
-        survey_context = f"최신 설문 결과\n진단 tone: {survey_result.result_tone}\nconfidence: {survey_result.confidence}\ntotal_score: {survey_result.total_score}\n"
-        survey_context += "\n".join(f"{ans.question_id}: {ans.option_label}" for ans in survey_result.answers)
-    combined_query = f"{request.question}\n\n사용자 설문 결과\n{survey_context}" if survey_context else request.question
+    # 이전 대화 히스토리에서 사용자 정보 수집
+    prev_messages = db.query(models.ChatMessage).filter_by(history_id=chat_history.id).order_by(models.ChatMessage.id.asc()).all()
+    conversation_history = ""
+    user_characteristics = []
+    
+    if prev_messages:
+        # 이전 대화에서 사용자 특성 파악
+        for msg in prev_messages[-6:]:  # 최근 6개 메시지만 사용 (3턴 대화)
+            if msg.role == "user":
+                conversation_history += f"사용자: {msg.text}\n"
+            else:
+                try:
+                    ai_data = json.loads(msg.text)
+                    conversation_history += f"전문가: {ai_data.get('description', '')}\n"
+                    if ai_data.get('primary_tone'):
+                        user_characteristics.append(f"추정 톤: {ai_data.get('primary_tone')} {ai_data.get('sub_tone')}")
+                except:
+                    conversation_history += f"전문가: {msg.text}\n"
+    
+    # 사용자 질문 + 대화 히스토리 결합
+    combined_query = f"현재 질문: {request.question}\n\n이전 대화 맥락:\n{conversation_history}"
+    
+    # RAG 검색
     fixed_chunks = top_k_chunks(combined_query, fixed_index, client, k=3)
     trend_chunks = top_k_chunks(combined_query, trend_index, client, k=3)
-    prompt_system = (
-        "당신은 퍼스널컬러 전문가이자 최신 패션 트렌드 컨설턴트입니다. 사용자의 최신 설문 진단 결과(result_tone, confidence, total_score 등)를 반드시 참고해서 퍼스널컬러 리포트와 추천을 작성해 주세요."
-    )
-    prompt_user = f"""사용자 데이터:\n{combined_query}\n\n불변 지식\n{chr(10).join(fixed_chunks)}\n\n가변 지식\n{chr(10).join(trend_chunks)}\n\n다음 JSON 형식으로만 응답해주세요:
+    # Fine-tuned 감정 모델용 시스템 프롬프트 (퍼스널컬러 전문가 버전)
+    prompt_system = """당신은 경험이 풍부한 퍼스널컬러 전문가입니다. 다음 가이드라인을 따라 상담해주세요:
+
+🎨 전문성과 친근함의 조화:
+- 퍼스널컬러 전문 지식을 바탕으로 정확한 분석 제공
+- 어려운 전문 용어는 쉽게 풀어서 설명
+- 고객이 편안하게 질문할 수 있도록 친근하고 따뜻한 톤 유지
+
+� 감정 공감 기반 상담:
+- 고객의 고민과 니즈를 세심하게 파악 ("색깔 때문에 고민이 많으셨겠어요")
+- 자신감 부족이나 스타일 고민에 공감하며 위로
+- 긍정적인 변화를 위한 격려와 응원 메시지
+
+🌟 실용적이고 개인화된 조언:
+- 고객의 라이프스타일, 직업, 선호도를 종합적으로 고려
+- 구체적이고 실행 가능한 컬러 추천
+- 예산과 상황에 맞는 현실적인 조언
+
+💬 자연스러운 대화 스타일:
+- 상담실에서 직접 대화하는 듯한 자연스러움
+- "어떠세요?", "~해보시는 건 어떨까요?" 같은 상담 톤
+- 고객이 궁금해할 점을 먼저 예상해서 설명
+
+당신의 뛰어난 감정 이해 능력을 활용하여, 고객이 컬러에 대한 자신감을 갖고 아름다워질 수 있도록 도와주세요."""
+    prompt_user = f"""대화 맥락:\n{combined_query}\n\n퍼스널컬러 전문 지식:\n{chr(10).join(fixed_chunks)}\n\n최신 트렌드 정보:\n{chr(10).join(trend_chunks)}\n\n다음 가이드라인으로 상담해주세요:
+1. 사용자의 질문에 대해 전문적이면서도 친근하게 응답
+2. 필요시 퍼스널컬러 진단을 위한 추가 질문 (피부톤, 선호 스타일, 라이프스타일 등)
+3. 대화 흐름에 맞는 자연스러운 컬러 추천
+4. 실용적이고 구체적인 조언 제공
+
+JSON 형식으로 응답해주세요:
 {{
   "primary_tone": "웜" 또는 "쿨",
   "sub_tone": "봄" 또는 "여름" 또는 "가을" 또는 "겨울",
-  "description": "상세한 설명 텍스트",
-  "recommendations": ["추천사항1", "추천사항2", "추천사항3"]
+  "description": "상세한 설명 텍스트 (자연스러운 대화체)",
+  "recommendations": ["구체적인 추천사항1", "구체적인 추천사항2", "구체적인 추천사항3"]
 }}
 
 주의: recommendations는 반드시 문자열 배열이어야 합니다.
 """
     messages = [{"role": "system", "content": prompt_system}, {"role": "user", "content": prompt_user}]
-    resp = client.chat.completions.create(model="gpt-4o-mini", messages=messages, temperature=0.3, max_tokens=600)
+    
+    # Fine-tuned 감정 모델 사용 (없으면 기본 모델로 fallback)
+    model_to_use = EMOTION_MODEL_ID if EMOTION_MODEL_ID else DEFAULT_MODEL
+    print(f"🤖 Using model: {model_to_use[:30]}***")  # 디버깅용 로그
+    
+    try:
+        resp = client.chat.completions.create(
+            model=model_to_use, 
+            messages=messages, 
+            temperature=0.8,  # 감정 모델에서는 좀 더 자연스러운 응답을 위해 temperature 상향
+            max_tokens=600
+        )
+    except Exception as e:
+        print(f"❌ OpenAI API 호출 실패: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"AI 서비스 일시적 오류: {str(e)}")
     content = resp.choices[0].message.content
     start, end = content.find("{"), content.rfind("}")
-    if start == -1 or end == -1:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="JSON 결과 없음")
-    data = json.loads(content[start:end+1])
+    
+    # 대화를 통한 퍼스널컬러 진단 (유틸리티 함수 사용)
+    primary_tone, sub_tone = analyze_conversation_for_color_tone(conversation_history, request.question)
+    
+    # JSON 파싱 시도
+    if start != -1 and end != -1:
+        try:
+            data = json.loads(content[start:end+1])
+            # 대화 분석 결과로 톤 정보 설정
+            data["primary_tone"] = primary_tone
+            data["sub_tone"] = sub_tone
+        except json.JSONDecodeError:
+            # JSON 파싱 실패 시 fallback
+            data = {
+                "primary_tone": primary_tone,
+                "sub_tone": sub_tone,
+                "description": content.strip(),
+                "recommendations": ["더 자세한 정보를 위해 피부톤이나 선호하는 색깔에 대해 말씀해주세요.", "평소 어떤 스타일을 좋아하시는지 알려주시면 더 정확한 분석을 도와드릴게요.", "궁금한 컬러나 스타일에 대해 언제든 물어보세요!"]
+            }
+    else:
+        # JSON 형식이 전혀 없는 경우 fallback
+        data = {
+            "primary_tone": primary_tone,
+            "sub_tone": sub_tone, 
+            "description": content.strip() if content.strip() else "안녕하세요! 퍼스널컬러 전문가입니다. 어떤 컬러나 스타일에 대해 궁금한 점이 있으신가요? 피부톤, 좋아하는 색깔, 평소 스타일 등 어떤 것이든 편하게 말씀해주세요!",
+            "recommendations": ["피부톤이나 혈관 색깔에 대해 알려주세요.", "평소 어떤 색깔 옷을 즐겨 입으시는지 말씀해주세요.", "메이크업이나 헤어 컬러 관련해서도 도움드릴 수 있어요."]
+        }
     
     # recommendations 필드 정리
     recommendations = data.get("recommendations", [])
@@ -187,7 +365,7 @@ def analyze(
     return {"history_id": chat_history.id, "items": items}
 
 @router.post("/end/{history_id}")
-def end_chat_session(
+async def end_chat_session(
     history_id: int,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -197,6 +375,76 @@ def end_chat_session(
         raise HTTPException(status_code=404, detail="대화 세션 없음")
     if chat.ended_at:
         return {"message": "이미 종료됨", "ended_at": chat.ended_at}
+    
+    # 대화 종료 시간 설정
     chat.ended_at = datetime.now(timezone.utc)
     db.commit()
-    return {"message": "대화 종료", "ended_at": chat.ended_at}
+    
+    # 챗봇 대화 분석 결과를 SurveyResult로 저장
+    try:
+        survey_result = await save_chatbot_analysis_result(
+            user_id=current_user.id,
+            chat_history_id=history_id,
+            db=db
+        )
+        
+        if survey_result:
+            return {
+                "message": "대화 종료 및 분석 결과 저장 완료", 
+                "ended_at": chat.ended_at,
+                "survey_result_id": survey_result.id,
+                "personal_color_type": survey_result.result_tone
+            }
+        else:
+            return {
+                "message": "대화 종료됨 (분석 결과 저장 실패)", 
+                "ended_at": chat.ended_at
+            }
+            
+    except Exception as e:
+        print(f"❌ 분석 결과 저장 중 오류: {e}")
+        return {
+            "message": "대화 종료됨 (분석 결과 저장 중 오류 발생)", 
+            "ended_at": chat.ended_at
+        }
+
+@router.post("/analyze/{history_id}")
+async def analyze_chat_for_personal_color(
+    history_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    특정 채팅 세션을 분석하여 퍼스널 컬러 진단 결과를 즉시 생성
+    (대화 종료와 별개로 분석 결과만 확인하고 싶을 때 사용)
+    """
+    chat = db.query(models.ChatHistory).filter_by(id=history_id, user_id=current_user.id).first()
+    if not chat:
+        raise HTTPException(status_code=404, detail="대화 세션을 찾을 수 없습니다")
+    
+    try:
+        survey_result = await save_chatbot_analysis_result(
+            user_id=current_user.id,
+            chat_history_id=history_id,
+            db=db
+        )
+        
+        if survey_result:
+            # JSON 필드들을 파싱하여 반환
+            return {
+                "message": "분석 완료",
+                "survey_result_id": survey_result.id,
+                "result_tone": survey_result.result_tone,
+                "result_name": survey_result.result_name,
+                "confidence": survey_result.confidence,
+                "detailed_analysis": survey_result.detailed_analysis,
+                "color_palette": json.loads(survey_result.color_palette) if survey_result.color_palette else [],
+                "style_keywords": json.loads(survey_result.style_keywords) if survey_result.style_keywords else [],
+                "makeup_tips": json.loads(survey_result.makeup_tips) if survey_result.makeup_tips else [],
+                "top_types": json.loads(survey_result.top_types) if survey_result.top_types else []
+            }
+        else:
+            raise HTTPException(status_code=400, detail="분석 결과를 생성할 수 없습니다")
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"분석 중 오류가 발생했습니다: {str(e)}")

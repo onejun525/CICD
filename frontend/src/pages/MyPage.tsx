@@ -34,9 +34,9 @@ import {
   useDeleteCurrentUser,
   useUserStats,
 } from '@/hooks/useUser';
-import { useSurveyResultsLive, useDeleteSurvey } from '@/hooks/useSurvey';
 import { getAvatarRenderInfo } from '@/utils/genderUtils';
 import RouterPaths from '@/routes/Router';
+import { useSurveyResultsLive, useDeleteSurvey } from '@/hooks/useSurvey';
 import type { SurveyResultDetail } from '@/api/survey';
 import type { PersonalColorType } from '@/types/personalColor';
 
@@ -60,9 +60,10 @@ const MyPage: React.FC = () => {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [activeTabKey, setActiveTabKey] = useState<string>('');
 
-  // 퍼스널 컬러 테스트로 이동
-  const handleGoToTest = () => {
-    navigate(RouterPaths.PersonalColorTest);
+  // AI 전문가 상담으로 이동
+  const handleAIConsultation = () => {
+    // navigate(RouterPaths.PersonalColorTest); // 기존 설문 방식 (비활성화)
+    navigate(RouterPaths.Chatbot); // 대화형 진단으로 변경
   };
 
   // 진단 결과 상세보기
@@ -364,27 +365,17 @@ const MyPage: React.FC = () => {
                       아직 진단 기록이 없습니다.
                     </Text>
                     <Text className="text-gray-400 text-sm block mt-2">
-                      진단을 완료하면 AI 상담도 이용할 수 있습니다.
+                      AI 전문가와 대화하며 퍼스널컬러 진단을 받아보세요.
                     </Text>
-                    <div className="mt-6 space-y-3">
-                      <div>
-                        <Button
-                          type="primary"
-                          size="large"
-                          onClick={handleGoToTest}
-                        >
-                          첫 진단 시작하기
-                        </Button>
-                      </div>
-                      <div>
-                        <Button
-                          disabled
-                          icon={<MessageOutlined />}
-                          className="text-gray-400"
-                        >
-                          AI 상담 받기 (진단 후 이용 가능)
-                        </Button>
-                      </div>
+                    <div className="mt-6">
+                      <Button
+                        type="primary"
+                        size="large"
+                        icon={<MessageOutlined />}
+                        onClick={handleAIConsultation}
+                      >
+                        AI 전문가와 퍼스널컬러 상담하기
+                      </Button>
                     </div>
                   </div>
                 ) : (
@@ -471,16 +462,14 @@ const MyPage: React.FC = () => {
                     />
 
                     <div className="text-center pt-4 border-t border-gray-100 space-y-3">
-                      <div className="flex justify-center gap-3">
+                      <div className="flex justify-center">
                         <Button
-                          type="default"
+                          type="primary"
                           icon={<MessageOutlined />}
                           onClick={() => navigate(RouterPaths.Chatbot)}
+                          size="large"
                         >
-                          AI 상담 받기
-                        </Button>
-                        <Button type="primary" onClick={handleGoToTest}>
-                          새 진단 시작하기
+                          AI 전문가와 퍼스널컬러 상담하기
                         </Button>
                       </div>
                     </div>

@@ -93,6 +93,7 @@ class SurveyResult(BaseModel):
     result_tone: str
     confidence: float
     total_score: int
+    source_type: Literal['survey', 'chatbot'] = 'survey'  # 분석 출처 구분
     
     # OpenAI 분석 결과 상세 정보
     detailed_analysis: Optional[str] = None
