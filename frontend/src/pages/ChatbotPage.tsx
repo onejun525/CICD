@@ -788,31 +788,7 @@ ${reportResponse.message || '기존 진단 결과를 바탕으로 상세한 리�
                       textAlign: 'center',
                     }}
                   >
-                    상세한 분석 결과를 확인해보세요!{' '}
-                    <Button
-                      type="default"
-                      size="small"
-                      onClick={() => {
-                        try {
-                          // previewResult is in scope when this summaryMessage is created
-                          // if previewResult exists, prefer it; otherwise fallback to handler
-                          // (using any to avoid TS issues in this inline scope)
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          const pr = (previewResultOuter as any) || null;
-                          if (pr) {
-                            setSelectedResult(pr);
-                            setIsDetailModalOpen(true);
-                            return;
-                          }
-                        } catch (e) {
-                          // ignore and fallback
-                        }
-                        handleViewDiagnosisDetail();
-                      }}
-                      className="border-purple-300 text-purple-600 hover:border-purple-500 hover:text-purple-700"
-                    >
-                      🎨 진단 결과
-                    </Button>
+                    상세한 분석 결과를 확인해보세요!
                   </div>
                 </div>
               ),
@@ -1297,14 +1273,29 @@ ${reportResponse.message || '기존 진단 결과를 바탕으로 상세한 리�
                     <div className="text-xs mt-1 opacity-70 flex justify-between items-center">
                       {/* 리포트 관련 메시지에 리포트 상세보기 버튼 추가 */}
                       {shouldShowReportButton(msg) && (
-                        <Button
-                          type="default"
-                          size="small"
-                          onClick={handleViewDiagnosisDetail}
-                          className="border-purple-300 text-purple-600 hover:border-purple-500 hover:text-purple-700"
-                        >
-                          🎨 진단 결과
-                        </Button>
+                    <Button
+                      type="default"
+                      size="small"
+                      onClick={() => {
+                        // previewResultOuter is sometimes undefined in this scope due to closure issues
+                        // Instead, always use selectedResult if available, otherwise fallback
+                        if (selectedResult) {
+                          setIsDetailModalOpen(true);
+                          return;
+                        }
+                        // If recentResults exist, use the first one
+                        if (surveyResults && surveyResults.length > 0) {
+                          setSelectedResult(surveyResults[0] as SurveyResultDetail);
+                          setIsDetailModalOpen(true);
+                          return;
+                        }
+                        // Fallback to handler (may show warning)
+                        handleViewDiagnosisDetail();
+                      }}
+                      className="border-purple-300 text-purple-600 hover:border-purple-500 hover:text-purple-700"
+                    >
+                      🎨 진단 결과
+                    </Button>
                       )}
                       {formatKoreanDate(msg.timestamp, true)}
                     </div>

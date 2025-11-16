@@ -28,6 +28,7 @@ interface DiagnosisDetailModalProps {
   selectedResult: SurveyResultDetail | null;
   onDelete?: (resultId: number, resultName: string) => void;
   showDeleteButton?: boolean;
+  recentResults?: SurveyResultDetail[]; // 유니크 최신 리스트
 }
 
 /**
@@ -39,6 +40,7 @@ const DiagnosisDetailModal: React.FC<DiagnosisDetailModalProps> = ({
   selectedResult,
   onDelete,
   showDeleteButton = true,
+  recentResults = [],
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const [activeTabKey, setActiveTabKey] = useState<string>('');
@@ -93,11 +95,11 @@ const DiagnosisDetailModal: React.FC<DiagnosisDetailModalProps> = ({
         const titleIcon = document.createElement('span');
         titleIcon.textContent = '🏆';
         titleIcon.style.cssText = 'color: #eab308; margin-right: 8px;';
-        
+
         const titleText = document.createElement('span');
         titleText.textContent = '퍼스널컬러 분석 결과';
         titleText.style.cssText = 'font-size: 18px; font-weight: bold; color: #000000;';
-        
+
         titleSection.appendChild(titleIcon);
         titleSection.appendChild(titleText);
 
@@ -105,11 +107,11 @@ const DiagnosisDetailModal: React.FC<DiagnosisDetailModalProps> = ({
         const dateIcon = document.createElement('span');
         dateIcon.textContent = '📅';
         dateIcon.style.cssText = 'margin-right: 4px;';
-        
+
         const dateText = document.createElement('span');
         dateText.textContent = formatKoreanDate(selectedResult.created_at, true);
         dateText.style.cssText = 'color: #6b7280; font-size: 14px;';
-        
+
         dateSection.appendChild(dateIcon);
         dateSection.appendChild(dateText);
 
@@ -362,7 +364,7 @@ const DiagnosisDetailModal: React.FC<DiagnosisDetailModalProps> = ({
       };
 
       const imageContent = createImageContent();
-      
+
       // 임시 컨테이너에 추가
       const tempContainer = document.createElement('div');
       tempContainer.style.cssText = `
@@ -386,7 +388,7 @@ const DiagnosisDetailModal: React.FC<DiagnosisDetailModalProps> = ({
 
       // 임시 컨테이너 제거
       document.body.removeChild(tempContainer);
-      
+
       message.destroy();
 
       const link = document.createElement('a');
@@ -452,66 +454,63 @@ const DiagnosisDetailModal: React.FC<DiagnosisDetailModalProps> = ({
             fontFamily: 'Arial, sans-serif',
           }}
         >
-          {/* Top Types 결과 - Tabs UI */}
-          {selectedResult.top_types && selectedResult.top_types.length > 0 ? (
+          {/* Top Types 결과 - Tabs UI (recentResults 기반) */}
+          {recentResults && recentResults.length > 0 ? (
             <div>
               <div className="flex justify-between">
                 <Title level={5} className="mb-4 flex items-center">
                   <TrophyOutlined className="mr-2 text-yellow-500" />
                   퍼스널컬러 분석 결과
                 </Title>
-                <Text className="!text-gray-500 flex items-center">
-                  <CalendarOutlined className="mr-1" />
-                  {formatKoreanDate(selectedResult.created_at, true)}
-                </Text>
               </div>
               <Tabs
                 activeKey={activeTabKey}
                 onChange={setActiveTabKey}
-                items={selectedResult.top_types.slice(0, 3).map((typeData, index) => {
-                  const isHighestScore = index === 0;
+                items={recentResults.slice(0, 3).map((result, index) => {
+                  const isRecommended = index === 0;
                   const typeNames: Record<string, { name: string; emoji: string; color: string }> = {
                     spring: { name: '봄 웜톤', emoji: '🌸', color: '#fab1a0' },
                     summer: { name: '여름 쿨톤', emoji: '💎', color: '#a8e6cf' },
                     autumn: { name: '가을 웜톤', emoji: '🍂', color: '#d4a574' },
                     winter: { name: '겨울 쿨톤', emoji: '❄️', color: '#74b9ff' },
                   };
-                  const typeInfo = typeNames[typeData.type] || typeNames.spring;
+                  const typeInfo = typeNames[result.result_tone] || typeNames.spring;
                   const allBackgrounds = {
                     spring: { background: 'linear-gradient(135deg, #ffeaa7 0%, #fab1a0 100%)', color: '#2d3436' },
                     summer: { background: 'linear-gradient(135deg, #a8e6cf 0%, #dcedc8 100%)', color: '#2d3436' },
                     autumn: { background: 'linear-gradient(135deg, #d4a574 0%, #8b4513 100%)', color: '#ffffff' },
                     winter: { background: 'linear-gradient(135deg, #74b9ff 0%, #0984e3 100%)', color: '#ffffff' },
                   };
-                  const displayStyle = allBackgrounds[typeData.type as PersonalColorType];
-                  const colorData = {
-                    swatches: typeData.color_palette || [],
-                    keyColors: typeData.color_palette?.map((_, idx) => `색상 ${idx + 1}`) || [],
-                  };
+                  const displayStyle = allBackgrounds[result.result_tone as PersonalColorType];
                   return {
-                    key: typeData.type,
+                    key: result.result_tone,
                     label: (
                       <div className="flex items-center px-2 gap-1">
-                        {isHighestScore && (
+                        {isRecommended && (
                           <Tag color="gold" className="ml-1 text-xs">추천</Tag>
                         )}
                         <span className="mr-1">{typeInfo.emoji}</span>
-                        <span className={isHighestScore ? 'text-purple-600' : ''}>{typeData.name}</span>
+                        <span className={isRecommended ? 'text-purple-600' : ''}>{result.result_name || typeInfo.name}</span>
                       </div>
                     ),
                     children: (
                       <div className="space-y-4">
+                        {/* 생성 일자 */}
+                        <Text className="!text-gray-500 flex items-center justify-end">
+                          <CalendarOutlined className="mr-1" />
+                          {formatKoreanDate(result.created_at, true)}
+                        </Text>
                         {/* 메인 타입 카드 */}
                         <div className="p-4 rounded-2xl text-center transition-all duration-300" style={{ background: displayStyle.background, color: displayStyle.color }}>
-                          <Title level={3} style={{ color: displayStyle.color, margin: 0 }}>{typeData.name}</Title>
-                          <Text style={{ color: displayStyle.color, fontSize: '14px', display: 'block', marginTop: '8px' }}>{typeData.description}</Text>
+                          <Title level={3} style={{ color: displayStyle.color, margin: 0 }}>{result.result_name || typeInfo.name}</Title>
+                          <Text style={{ color: displayStyle.color, fontSize: '14px', display: 'block', marginTop: '8px' }}>{result.result_description}</Text>
                         </div>
                         {/* 컬러 팔레트 */}
-                        {colorData.swatches.length > 0 && (
+                        {result.color_palette && result.color_palette.length > 0 && (
                           <div>
                             <Text strong className="!text-gray-700 block mb-2 text-sm">🎨 당신만의 컬러 팔레트</Text>
                             <div className="flex flex-wrap justify-center gap-3 mb-3">
-                              {colorData.swatches.slice(0, 8).map((color, colorIndex) => {
+                              {result.color_palette.slice(0, 8).map((color, colorIndex) => {
                                 const isWhite = color.toLowerCase() === '#ffffff';
                                 return (
                                   <Tooltip key={colorIndex} title={`${color} 복사`} placement="top">
@@ -526,24 +525,34 @@ const DiagnosisDetailModal: React.FC<DiagnosisDetailModalProps> = ({
                           </div>
                         )}
                         {/* 스타일 키워드 */}
-                        {typeData.style_keywords && typeData.style_keywords.length > 0 && (
+                        {result.style_keywords && result.style_keywords.length > 0 && (
                           <div>
                             <Text strong className="!text-gray-700 block mb-2 text-sm">✨ 스타일 키워드</Text>
                             <div className="flex flex-wrap gap-2">
-                              {typeData.style_keywords.map((keyword, keywordIndex) => (
+                              {result.style_keywords.map((keyword, keywordIndex) => (
                                 <Tag key={keywordIndex} color="geekblue">{keyword}</Tag>
                               ))}
                             </div>
                           </div>
                         )}
                         {/* 메이크업 팁 */}
-                        {typeData.makeup_tips && typeData.makeup_tips.length > 0 && (
+                        {result.makeup_tips && result.makeup_tips.length > 0 && (
                           <div>
                             <Text strong className="!text-gray-700 block mb-2 text-sm">💄 메이크업 팁</Text>
                             <div className="flex flex-wrap gap-2">
-                              {typeData.makeup_tips.map((tip, tipIndex) => (
+                              {result.makeup_tips.map((tip, tipIndex) => (
                                 <Tag key={tipIndex} color="volcano">{tip}</Tag>
                               ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* 상세 분석 */}
+                        {result.detailed_analysis && (
+                          <div>
+                            <Divider />
+                            <Title level={5} className="mb-3">AI 상세 분석</Title>
+                            <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg">
+                              <Text className="!text-gray-700 leading-relaxed whitespace-pre-line">{result.detailed_analysis}</Text>
                             </div>
                           </div>
                         )}
@@ -592,16 +601,6 @@ const DiagnosisDetailModal: React.FC<DiagnosisDetailModalProps> = ({
                 {selectedResult.makeup_tips.map((tip, index) => (
                   <Tag key={index} color="volcano">{tip}</Tag>
                 ))}
-              </div>
-            </div>
-          )}
-          {/* 상세 분석 (AI 생성) */}
-          {selectedResult.detailed_analysis && (
-            <div>
-              <Divider />
-              <Title level={5} className="mb-3">AI 상세 분석</Title>
-              <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg">
-                <Text className="!text-gray-700 leading-relaxed whitespace-pre-line">{selectedResult.detailed_analysis}</Text>
               </div>
             </div>
           )}

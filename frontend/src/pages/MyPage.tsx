@@ -499,20 +499,7 @@ const MyPage: React.FC = () => {
         selectedResult={selectedResult}
         onDelete={handleDeleteSurvey}
         showDeleteButton={true}
-        recentResults={(() => {
-          if (!surveyResults || surveyResults.length === 0) return [];
-          const seen = new Set<string>();
-          const out: SurveyResultDetail[] = [];
-          for (const r of surveyResults) {
-            const key = r.result_name || String(r.result_tone) || String(r.id);
-            if (!seen.has(key)) {
-              seen.add(key);
-              out.push(r);
-            }
-            if (out.length >= 3) break;
-          }
-          return out;
-        })()}
+        recentResults={selectedResult ? [selectedResult] : []}
       />
     </div>
   );
