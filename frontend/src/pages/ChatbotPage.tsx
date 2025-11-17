@@ -987,6 +987,17 @@ ${reportResponse.message || '기존 진단 결과를 바탕으로 상세한 리�
     }
   };
 
+
+// 진단 챗봇 버블 여부 판별 함수 (예시: description에 '진단', '분석', '추천', '퍼스널컬러', '톤', '결과' 등 포함 시)
+// 진단 완료 요약 customContent가 있는 메시지(진단 완료 버블)만 true 반환
+function isDiagnosisBubble(msg?: any): boolean {
+  // 진단 요약 customContent가 있는 경우만 진단 버블로 간주
+  if (msg && msg.customContent && typeof msg.customContent === 'object') {
+    return true;
+  }
+  return false;
+}
+
   // 로딩 상태
   if (userLoading || surveyLoading) {
     return (
@@ -1121,7 +1132,7 @@ ${reportResponse.message || '기존 진단 결과를 바탕으로 상세한 리�
                       );
                       return (
                         <Avatar
-                          className={`!ml-2 ${avatarConfig.className}`}
+                          className={`!ml-3 ${avatarConfig.className}`}
                           style={avatarConfig.style}
                         >
                           {typeof avatarConfig.content === 'string' ? (
@@ -1138,12 +1149,13 @@ ${reportResponse.message || '기존 진단 결과를 바탕으로 상세한 리�
                     <Avatar
                       icon={<RobotOutlined />}
                       style={{ backgroundColor: '#8b5cf6', flexShrink: 0 }}
-                      className="!mr-2"
+                      className="!mr-3"
                     />
                   )}
                   <div className="flex flex-col gap-1">
                     {/* 이모티콘 애니메이션 버블 (bot 메시지에만, 먼저 표시) */}
-                    {!msg.isUser && msg.chatRes?.emotion && (
+                    {/* 퍼스널컬러 진단 챗봇 버블(분석/추천/진단 등)에는 이모티콘 미표시 */}
+                    {!msg.isUser && msg.chatRes?.emotion && !isDiagnosisBubble(msg) && (
                       <div
                         className="relative px-4 py-2 rounded-lg bg-white border border-gray-200 mb-1 flex items-center chatbot-balloon"
                         style={{ maxWidth: 'fit-content' }}

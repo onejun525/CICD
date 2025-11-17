@@ -424,26 +424,37 @@ def detect_emotion(text: str) -> str:
     OpenAI 기반 감정 분석 (Lottie emotion string 반환)
     """
     prompt = f"""
-다음 사용자 발화의 감정을 분류하세요. 아래 중 하나로만 답하세요:
-smile, sad, angry, love, no, wink
+다음 사용자 발화의 감정을 아래 목록 중 하나로만 분류하세요. 반드시 한 단어만 답하세요. 다른 단어, 설명 없이.
+목록: happy, sad, angry, love, fearful, neutral
+예시:
+- "오늘 너무 힘들었어요" → sad
+- "정말 고마워요!" → happy
+- "화가 나요" → angry
+- "사랑해요" → love
+- "무서워요" → fearful
+- "별 감정이 없어요" → neutral
 발화: "{text}"
-감정 (위 목록 중 하나):
+감정 (목록 중 하나, 한 단어만):
 """
     try:
         response = client.chat.completions.create(
             model=get_model_to_use(),
-            messages=[{"role": "system", "content": "너는 감정 분석 전문가야. 사용자 발화의 감정을 분류해줘."},
+            messages=[{"role": "system", "content": "너는 감정 분석 전문가야. 반드시 목록 중 하나의 감정만 한 단어로 답해줘."},
                       {"role": "user", "content": prompt}],
-            max_tokens=10,
+            max_tokens=5,
             temperature=0.0
         )
         emotion = response.choices[0].message.content.strip().lower()
-        # Lottie emotion mapping
-        valid_emotions = ["smile", "sad", "angry", "love", "no", "wink"]
+        # 감정 단어만 추출 (정확히 일치하는 단어만 반환)
+        valid_emotions = ["happy", "sad", "angry", "love", "fearful", "neutral"]
+        for e in valid_emotions:
+            if emotion == e:
+                return e
+        # 혹시 여러 단어가 섞여 있으면 첫 번째 유효 단어만 반환
         for e in valid_emotions:
             if e in emotion:
                 return e
-        return "wink"
+        return "neutral"
     except Exception as e:
         print(f"[detect_emotion] OpenAI 감정 분석 오류: {e}")
         return "wink"

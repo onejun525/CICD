@@ -9,7 +9,7 @@ export interface ChatbotRequest {
   history_id?: number;
 }
 
-export type EmotionType = 'smile' | 'sad' | 'angry' | 'love' | 'no' | 'wink';
+export type EmotionType = 'happy' | 'sad' | 'angry' | 'love' | 'fearful' | 'neutral';
 
 export interface ChatResModel {
   primary_tone: string;

@@ -4,12 +4,12 @@ import type { EmotionType } from '@/api/chatbot';
 
 
 const emotionToLottie: Record<EmotionType, string> = {
-  smile: '/lotties/smile.json',
+  happy: '/lotties/happy.json', // smiling face
   sad: '/lotties/sad.json',
   angry: '/lotties/angry.json',
   love: '/lotties/love.json',
-  no: '/lotties/no.json',
-  wink: '/lotties/wink.json',
+  fearful: '/lotties/fearful.json', // side to side worried face
+  neutral: '/lotties/neutral.json', // wink face
 };
 
 interface AnimatedEmojiProps {
@@ -42,7 +42,7 @@ if (typeof window !== 'undefined' && !document.getElementById('emoji-bounce-styl
 }
 
 const AnimatedEmoji: React.FC<AnimatedEmojiProps> = ({ emotion, size = 48 }) => {
-  const lottieSrc = emotionToLottie[emotion] || emotionToLottie['wink'];
+  const lottieSrc = emotionToLottie[emotion] || emotionToLottie['neutral'];
   const [isInteractive, setIsInteractive] = useState(true);
   const [isAppeared, setIsAppeared] = useState(true);
   const timeoutRef = useRef<number | null>(null);
