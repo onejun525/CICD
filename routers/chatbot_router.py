@@ -419,6 +419,35 @@ async def save_report_now(
     else:
         raise HTTPException(status_code=500, detail="진단 기록 생성 실패")
 
+def detect_emotion(text: str) -> str:
+    """
+    OpenAI 기반 감정 분석 (Lottie emotion string 반환)
+    """
+    prompt = f"""
+다음 사용자 발화의 감정을 분류하세요. 아래 중 하나로만 답하세요:
+smile, sad, angry, love, no, wink
+발화: "{text}"
+감정 (위 목록 중 하나):
+"""
+    try:
+        response = client.chat.completions.create(
+            model=get_model_to_use(),
+            messages=[{"role": "system", "content": "너는 감정 분석 전문가야. 사용자 발화의 감정을 분류해줘."},
+                      {"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0.0
+        )
+        emotion = response.choices[0].message.content.strip().lower()
+        # Lottie emotion mapping
+        valid_emotions = ["smile", "sad", "angry", "love", "no", "wink"]
+        for e in valid_emotions:
+            if e in emotion:
+                return e
+        return "wink"
+    except Exception as e:
+        print(f"[detect_emotion] OpenAI 감정 분석 오류: {e}")
+        return "wink"
+
 @router.post("/analyze", response_model=ChatbotHistoryResponse)
 def analyze(
     request: ChatbotRequest,
@@ -553,6 +582,9 @@ JSON 형식으로 응답해주세요:
             "description": content.strip() if content.strip() else "안녕하세요! 퍼스널컬러 전문가입니다. 어떤 컬러나 스타일에 대해 궁금한 점이 있으신가요? 피부톤, 좋아하는 색깔, 평소 스타일 등 어떤 것이든 편하게 말씀해주세요!",
             "recommendations": ["피부톤이나 혈관 색깔에 대해 알려주세요.", "평소 어떤 색깔 옷을 즐겨 입으시는지 말씀해주세요.", "메이크업이나 헤어 컬러 관련해서도 도움드릴 수 있어요."]
         }
+    # 감정 이모티콘 분석 및 추가
+    user_emotion = detect_emotion(request.question)
+    data["emotion"] = user_emotion
     
     # recommendations 필드 정리
     recommendations = data.get("recommendations", [])
@@ -588,13 +620,11 @@ JSON 형식으로 응답해주세요:
     for i in range(0,len(msgs)-1,2):
         if msgs[i].role=="user" and msgs[i+1].role=="ai":
             d = json.loads(msgs[i+1].text)
-            
             # 기존 데이터의 recommendations 필드도 정리
             recommendations = d.get("recommendations", [])
             if isinstance(recommendations, dict):
                 recommendations = list(recommendations.values())
             elif isinstance(recommendations, list):
-                # 중첩된 리스트를 평평하게 만들기
                 flattened_recommendations = []
                 for item in recommendations:
                     if isinstance(item, list):
@@ -604,14 +634,13 @@ JSON 형식으로 응답해주세요:
                 recommendations = flattened_recommendations
             else:
                 recommendations = []
-            
             d["recommendations"] = recommendations
-            
             items.append(ChatItemModel(
                 question_id=qid,
                 question=msgs[i].text,
                 answer=d.get("description",""),
-                chat_res=ChatResModel.model_validate(d)
+                chat_res=ChatResModel.model_validate(d),
+                emotion=d.get("emotion", "wink")
             ))
             qid += 1
     return {"history_id": chat_history.id, "items": items}
