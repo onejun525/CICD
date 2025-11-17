@@ -9,11 +9,14 @@ export interface ChatbotRequest {
   history_id?: number;
 }
 
+export type EmotionType = 'smile' | 'sad' | 'angry' | 'love' | 'no' | 'wink';
+
 export interface ChatResModel {
   primary_tone: string;
   sub_tone: string;
   description: string;
   recommendations: string[];
+  emotion: EmotionType;
 }
 
 export interface ChatItemModel {
