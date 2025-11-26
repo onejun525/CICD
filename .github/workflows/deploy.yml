@@ -28,9 +28,9 @@ jobs:
       # (CI/CD 서버에서 이미지를 빌드하여 Docker Hub에 저장합니다.)
       - name: Build and Push Docker Images
 
-        run: |
+        run:
           # 백엔드 이미지 빌드 및 푸시 (FastAPI)
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/skn16-fastapi:latest --file Dockerfile .
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/skn16-fastapi:latest .
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/skn16-fastapi:latest
 
           # 프론트엔드 이미지 빌드 및 푸시 (Nginx)
